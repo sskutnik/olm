@@ -194,7 +194,7 @@ class TestPathOperations:
         file_path = Path("/base/work/subdir/file.txt")
 
         relative = file_path.relative_to(work_dir)
-        assert str(relative) == "subdir/file.txt"
+        assert str(relative) == str(Path("subdir/file.txt"))
 
     def test_suffix_operations(self):
         """Test suffix operations."""
@@ -221,7 +221,7 @@ class TestConfigurationPatterns:
 
         assert name == "test_reactor"
         assert isinstance(work_dir, Path)
-        assert str(work_dir) == "/work"
+        assert str(work_dir) == str(Path("/work"))
 
     def test_error_accumulation_pattern(self):
         """Test error accumulation patterns used in internal functions."""
@@ -324,8 +324,8 @@ class TestEnvironmentLoading:
         scalerte_path = str(Path(scale_dir) / "bin" / "scalerte")
         obiwan_path = str(Path(scale_dir) / "bin" / "obiwan")
 
-        assert scalerte_path == "/test/scale/bin/scalerte"
-        assert obiwan_path == "/test/scale/bin/obiwan"
+        assert scalerte_path == str(Path("/test/scale/bin/scalerte"))
+        assert obiwan_path == str(Path("/test/scale/bin/obiwan"))
 
 
 class TestMakefilePatterns:

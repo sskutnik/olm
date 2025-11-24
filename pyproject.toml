@@ -22,12 +22,15 @@ dependencies = [
     "scipy",
     "numpy",
     "imohash",
+	"jinja2",
     "pygments",
     "pytest",
+	"pytest-xdist",
     "pydantic",
     "h5py",
     "tqdm",
-    "structlog"
+    "structlog",
+	"hypothesis"
 ]
 requires-python = ">=3.9"
 
