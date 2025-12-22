@@ -151,7 +151,9 @@ class TestBurnupListExtraction:
         
         np.testing.assert_array_equal(result, mock_burnup_data)
         assert mock_parse_burnups.call_count == 2
-    
+   
+    # TODO: Replicate this test for parse_burnups_from_polaris_t16
+
     @patch('scale.olm.core.ScaleOutfile.parse_burnups_from_triton_output')
     def test_get_burnup_list_inconsistent_burnups(self, mock_parse_burnups):
         """Test burnup extraction with inconsistent burnup lists."""
@@ -460,4 +462,6 @@ class TestIntegrationScenarios:
         # Verify extracted values are reasonable
         assert all(0 < enr < 10 for enr in enrichments)
         assert all(0 < mod < 2 for mod in mod_densities)
-        assert len(set(enrichments)) == len(enrichments)  # All unique 
+        assert len(set(enrichments)) == len(enrichments)  # All unique
+
+

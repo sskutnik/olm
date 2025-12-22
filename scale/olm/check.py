@@ -326,7 +326,6 @@ class GridGradient:
 
                     # Compute error for this interval
                     error = (dx ** 2) * max_ypp / 8.0
-                    #print(i,j,dx,max_ypp,error)
 
                     # Flat index.
                     iu = k * n * nd + i * nd + j
@@ -742,13 +741,13 @@ class LowOrderConsistency:
                 self.time_list = case["time"]
 
             internal.logger.debug(f"loading LO {lo_ii_json}")
+
             with open(lo_ii_json, "r") as f:
                 jo = json.load(f)
                 case = jo["responses"][f"case({self.lo_case})"]
                 lo = np.array(case["amount"])
                 lo_time = case["time"]
                 self.lo_list.append(lo)
-
                 # Check consistency.
                 if not np.array_equal(lo_time, self.time_list):
                     raise ValueError(
@@ -777,10 +776,6 @@ class LowOrderConsistency:
                 "Runs suppressed by environment variable SCALE_OLM_DO_RUN!"
             )
 
-        # TODO: This needs to be more adaptive; for instance,
-        # Polaris' basis material is not case -2 (can vary).
-        # Set the case identifiers for the high and low problems.
-        self.hi_case = -2
         self.lo_case = 1
 
         try:
