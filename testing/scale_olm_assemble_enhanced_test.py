@@ -151,8 +151,6 @@ class TestBurnupListExtraction:
         
         np.testing.assert_array_equal(result, mock_burnup_data)
         assert mock_parse_burnups.call_count == 2
-   
-    # TODO: Replicate this test for parse_burnups_from_polaris_t16
 
     @patch('scale.olm.core.ScaleOutfile.parse_burnups_from_triton_output')
     def test_get_burnup_list_inconsistent_burnups(self, mock_parse_burnups):
@@ -171,6 +169,23 @@ class TestBurnupListExtraction:
         with pytest.raises(ValueError, match="burnups deviated from previous"):
             assemble._get_burnup_list(file_list)
     
+    @patch('scale.olm.core.ScaleOutfile.parse_burnups_from_polaris_t16')
+    def test_get_burnup_list_basic_polaris(self, mock_parse_burnups):
+        """Test burnup extraction from file list."""
+        # Mock burnup parsing
+        mock_burnup_data = np.array([0.0, 1000.0, 2500.0])    
+        mock_parse_burnups.return_value = mock_burnup_data
+        
+        file_list = [
+            {'output': Path('perm_000.out'), 't16' : Path('perm_000.t16')},
+            {'output': Path('perm_001.out'), 't16' : Path('perm_001.t16')},
+        ]
+        
+        result = assemble._get_burnup_list(file_list)
+        
+        np.testing.assert_array_equal(result, mock_burnup_data)
+        assert mock_parse_burnups.call_count == 2
+
     def test_get_burnup_list_empty_files(self):
         """Test burnup extraction with empty file list."""
         result = assemble._get_burnup_list([])

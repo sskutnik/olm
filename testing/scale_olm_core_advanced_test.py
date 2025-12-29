@@ -9,6 +9,7 @@ import pytest
 import numpy as np
 import tempfile
 import os
+from unittest.mock import patch
 
 import scale.olm.core as core
 
@@ -190,7 +191,105 @@ class TestBurnupHistory:
         assert len(operations) >= 3  # At least some operations
         assert operations[0]["start"] == 0
 
-    # TODO: Add tests for Obiwan.get_history_from_f71
+
+    @patch('scale.olm.core.run_command')
+    def test_obiwan_get_f71_history_s63(self, mock_obiwan):
+
+        mock_obiwan.return_value = """
+
+             pos         time        power         flux      fluence       energy    initialhm libpos   case   step DCGNAB
+             (-)          (s)         (MW)    (n/cm2-s)      (n/cm2)        (MWd)      (MTIHM)    (-)    (-)    (-)    (-)               
+               1  0.00000e+00  4.00000e+01  8.11143e+14  0.00000e+00  0.00000e+00  1.00000e+00      1      1      0 DC----
+               2  2.16000e+06  4.00000e+01  6.22529e+14  1.53582e+21  1.00000e+03  1.00000e+00      1      1     10 DC----
+               3  2.16000e+07  4.00000e+01  4.26681e+14  8.78948e+21  1.00000e+04  1.00000e+00      2      1     10 DC----
+               4  5.40000e+07  4.00000e+01  4.26566e+14  1.34274e+22  2.50000e+04  1.00000e+00      3      1     10 DC----
+               5  1.08000e+08  4.00000e+01  4.31263e+14  2.30677e+22  5.00000e+04  1.00000e+00      4      1     10 DC----
+               6  1.51200e+08  4.00000e+01  4.32303e+14  1.86058e+22  7.00000e+04  1.00000e+00      5      1     10 DC----
+               7  1.94400e+08  4.00000e+01  4.33742e+14  1.86669e+22  9.00000e+04  1.00000e+00      6      1     10 DC----
+               8  2.37600e+08  4.00000e+01  4.35733e+14  1.87415e+22  1.10000e+05  1.00000e+00      7      1     10 DC----
+"""
+        # TRITON: power is over the interval
+        triton_hist = core.Obiwan.get_history_from_f71("obiwan.exe", "perm000.f71", 1)
+        mock_obiwan.assert_called_once()
+        expected_hist = {"burndata": [{"power": 40.0, "burn": 25.0}, {"power": 40.0, "burn": 225.0}, {"power": 40.0, "burn": 375.0}, {"power": 40.0, "burn": 625.0}, {"power": 40, "burn": 500.0}, {"power": 40.0, "burn": 500.0}, {"power": 40.0, "burn": 500.0}], "initialhm": 1.0}
+
+        np.testing.assert_almost_equal(expected_hist["initialhm"], triton_hist["initialhm"])
+        assert len(expected_hist["burndata"]) == len(triton_hist["burndata"])
+        for t_burndata, e_burndata in zip(triton_hist["burndata"], expected_hist["burndata"]):
+            np.testing.assert_almost_equal(t_burndata["power"], e_burndata["power"])
+            np.testing.assert_almost_equal(t_burndata["burn"], e_burndata["burn"])
+
+        # Polaris gives power at the end of the timestep, so modify the last 
+        # step accordingly and verify our history is still as-expected
+        polaris_rv =  "\n".join(mock_obiwan.return_value.split("\n")[:-2]) + \
+"""
+               8  2.37600e+08  0.10000e-03  0.00000e+00  1.87415e+22  1.10000e+05  1.00000e+00      7      1     10 DC----
+"""
+        polaris_hist = core.Obiwan.get_history_from_f71("obiwan.exe", "perm000.f71", 1, is_polaris=True)
+        assert mock_obiwan.call_count == 2        
+        np.testing.assert_almost_equal(expected_hist["initialhm"], polaris_hist["initialhm"])
+
+        assert len(expected_hist["burndata"]) == len(polaris_hist["burndata"])
+        for p_burndata, e_burndata in zip(polaris_hist["burndata"], expected_hist["burndata"]):
+            np.testing.assert_almost_equal(p_burndata["power"], e_burndata["power"])
+            np.testing.assert_almost_equal(p_burndata["burn"], e_burndata["burn"])
+
+
+    @patch('scale.olm.core.run_command')
+    def test_obiwan_get_f71_history_s70(self, mock_obiwan):
+        mock_obiwan.return_value = """
+
+            pos         time        power         flux      fluence       energy    initialhm       volume libpos   case   step DCGNAB
+            (-)          (s)         (MW)   (n/cm^2-s)     (n/cm^2)        (MWd)      (MTIHM)       (cm^3)    (-)    (-)    (-)    (-)
+              1  0.00000e+00  0.00000e+00  0.00000e+00  0.00000e+00  0.00000e+00  1.00000e+00  1.09091e+05      1     10      0 DC----
+              2  2.16000e+06  3.99302e+01  2.77611e+14  5.99639e+20  9.98255e+02  1.00000e+00  1.09091e+05      2     10      1 DC----
+              3  2.16000e+07  3.99294e+01  2.88762e+14  6.21316e+21  9.98238e+03  1.00000e+00  1.09091e+05      3     10      2 DC----
+              4  5.40000e+07  3.99271e+01  3.13691e+14  1.63767e+22  2.49551e+04  1.00000e+00  1.09091e+05      4     10      3 DC----
+              5  8.10000e+07  3.99215e+01  3.42857e+14  2.56339e+22  3.74305e+04  1.00000e+00  1.09091e+05      5     10      4 DC----
+              6  1.08000e+08  3.99155e+01  3.70174e+14  3.56286e+22  4.99041e+04  1.00000e+00  1.09091e+05      6     10      5 DC----
+              7  1.29600e+08  3.99087e+01  3.95311e+14  4.41673e+22  5.98813e+04  1.00000e+00  1.09091e+05      7     10      6 DC----
+              8  1.51200e+08  3.99026e+01  4.18116e+14  5.31986e+22  6.98569e+04  1.00000e+00  1.09091e+05      8     10      7 DC----
+"""
+
+        # TRITON: power is over the interval
+        triton_hist = core.Obiwan.get_history_from_f71("obiwan.exe", "perm000.f71", 10)
+        mock_obiwan.assert_called_once()
+        expected_hist = {"burndata": [{"power": 39.9302, "burn": 25.0}, {"power": 39.9294, "burn": 225.0}, {"power": 39.9271, "burn": 375.0}, {"power": 39.9215, "burn": 312.5}, {"power": 39.9155, "burn": 312.5}, {"power": 39.9087, "burn": 250.0}, {"power": 39.9026, "burn": 250.0 }], "initialhm": 1.0}
+
+        np.testing.assert_almost_equal(expected_hist["initialhm"], triton_hist["initialhm"])
+
+        assert len(expected_hist["burndata"]) == len(triton_hist["burndata"])
+        for t_burndata, e_burndata in zip(triton_hist["burndata"], expected_hist["burndata"]):
+            np.testing.assert_almost_equal(t_burndata["power"], e_burndata["power"])
+            np.testing.assert_almost_equal(t_burndata["burn"], e_burndata["burn"])
+
+        # Note than in SCALE 7.0, TRITON (correctly) reports the initial
+        # compositions power as zero; however, Polaris gives power at the end
+        # of the timestep, so we shift the power history accordingly and verify
+        # our history is still as-expected
+
+        mock_obiwan.return_value = """
+
+            pos         time        power         flux      fluence       energy    initialhm       volume libpos   case   step DCGNAB
+            (-)          (s)         (MW)   (n/cm^2-s)     (n/cm^2)        (MWd)      (MTIHM)       (cm^3)    (-)    (-)    (-)    (-)
+              1  0.00000e+00  3.99302e+01  2.77611e+14  0.00000e+00  0.00000e+00  1.00000e+00  1.09091e+05      1     10      0 DC----
+              2  2.16000e+06  3.99294e+01  2.88762e+14  5.99639e+20  9.98255e+02  1.00000e+00  1.09091e+05      2     10      1 DC----
+              3  2.16000e+07  3.99271e+01  3.13691e+14  6.21316e+21  9.98238e+03  1.00000e+00  1.09091e+05      3     10      2 DC----
+              4  5.40000e+07  3.99215e+01  3.42857e+14  1.63767e+22  2.49551e+04  1.00000e+00  1.09091e+05      4     10      3 DC----
+              5  8.10000e+07  3.99155e+01  3.70174e+14  2.56339e+22  3.74305e+04  1.00000e+00  1.09091e+05      5     10      4 DC----
+              6  1.08000e+08  3.99087e+01  3.95311e+14  3.56286e+22  4.99041e+04  1.00000e+00  1.09091e+05      6     10      5 DC----
+              7  1.29600e+08  3.99026e+01  4.18116e+14  4.41673e+22  5.98813e+04  1.00000e+00  1.09091e+05      7     10      6 DC----
+              8  1.51200e+08  0.39026e-03  0.00000e+00  5.31986e+22  6.98569e+04  1.00000e+00  1.09091e+05      8     10      7 DC----
+"""
+        polaris_hist = core.Obiwan.get_history_from_f71("obiwan.exe", "perm000.f71", 10, is_polaris=True)
+        assert mock_obiwan.call_count == 2
+        np.testing.assert_almost_equal(expected_hist["initialhm"], polaris_hist["initialhm"])
+
+        assert len(expected_hist["burndata"]) == len(polaris_hist["burndata"])
+        for p_burndata, e_burndata in zip(polaris_hist["burndata"], expected_hist["burndata"]):
+            np.testing.assert_almost_equal(p_burndata["power"], e_burndata["power"])
+            np.testing.assert_almost_equal(p_burndata["burn"], e_burndata["burn"])
+
 
 class TestScaleOutfile:
     """Test the ScaleOutfile class for SCALE output parsing."""
@@ -228,8 +327,68 @@ Some footer text...
             os.unlink(temp_path)
 
     def test_parse_burnups_from_polaris_t16(self):
-        # TODO: Fill it in
-        pass
+        """Test parsing of the burnups from a Polaris t16 file using a real output"""
+
+        sample_t16 = """' Record 1: nblk, lblk, record sizes.
+    13  1000  5120    14   208     0     0     0     3   115    16   100   100
+' Record 2: dimensioning data.
+        69         0         1         2         1         6         4         8         1        10
+        10         6         1         0
+' Record 3: depletion data.
+' Burnups
+ 0.000000E+00 1.000000E-01 2.500000E-01 5.000000E-01 1.000000E+00 1.500000E+00
+ 2.000000E+00 2.500000E+00 3.000000E+00 3.500000E+00 4.000000E+00 4.500000E+00
+ 5.000000E+00 5.500000E+00 6.000000E+00 6.500000E+00 7.000000E+00 7.500000E+00
+ 8.000000E+00 8.500000E+00 9.000000E+00 9.500000E+00 1.000000E+01 1.050000E+01
+ 1.100000E+01 1.150000E+01 1.200000E+01 1.250000E+01 1.300000E+01 1.350000E+01
+ 1.400000E+01 1.450000E+01 1.500000E+01 1.550000E+01 1.600000E+01 1.650000E+01
+ 1.700000E+01 1.750000E+01 1.800000E+01 1.850000E+01 1.900000E+01 1.950000E+01
+ 2.000000E+01 2.050000E+01 2.100000E+01 2.150000E+01 2.200000E+01 2.300000E+01
+ 2.400000E+01 2.500000E+01 2.750000E+01 3.000000E+01 3.250000E+01 3.500000E+01
+ 4.000000E+01 4.500000E+01 5.000000E+01 5.500000E+01 6.000000E+01 6.500000E+01
+ 7.000000E+01 7.500000E+01 8.000000E+01 8.500000E+01 9.000000E+01 9.500000E+01
+ 1.000000E+02 1.050000E+02 1.100000E+02
+' Time
+ 0.000000E+00 3.831418E+00 9.578544E+00 1.915709E+01 3.831417E+01 5.747126E+01
+ 7.662835E+01 9.578544E+01 1.149425E+02 1.340996E+02 1.532567E+02 1.724138E+02
+ 1.915709E+02 2.107280E+02 2.298851E+02 2.490421E+02 2.681992E+02 2.873563E+02
+ 3.065134E+02 3.256705E+02 3.448276E+02 3.639847E+02 3.831418E+02 4.022989E+02
+ 4.214559E+02 4.406130E+02 4.597701E+02 4.789272E+02 4.980843E+02 5.172414E+02
+ 5.363984E+02 5.555555E+02 5.747126E+02 5.938698E+02 6.130268E+02 6.321839E+02
+ 6.513410E+02 6.704981E+02 6.896552E+02 7.088123E+02 7.279694E+02 7.471265E+02
+ 7.662835E+02 7.854406E+02 8.045977E+02 8.237548E+02 8.429119E+02 8.812261E+02
+ 9.195402E+02 9.578544E+02 1.053640E+03 1.149425E+03 1.245211E+03 1.340996E+03
+ 1.532567E+03 1.724138E+03 1.915709E+03 2.107280E+03 2.298851E+03 2.490421E+03
+ 2.681992E+03 2.873563E+03 3.065134E+03 3.256705E+03 3.448276E+03 3.639847E+03
+ 3.831418E+03 4.022989E+03 4.214560E+03
+' Power
+ 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01
+ 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01
+ 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01
+ 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01
+ 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01
+ 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01
+ 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01
+ 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01
+ 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01
+ 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01
+ 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01
+ 2.610000E+01 2.610000E+01 2.610000E+01
+ ... additional records ..."""
+
+        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.t16') as f:
+            f.write(sample_t16)
+            temp_path = f.name
+
+        try:
+            burnups = core.ScaleOutfile.parse_burnups_from_polaris_t16(temp_path)
+
+            assert len(burnups) == 69
+            expected = [0.0, 100.0, 250.0, 500.0, 1000.0, 1500.0, 2000.0, 2500.0, 3000.0, 3500.0, 4000.0, 4500.0, 5000.0, 5500.0, 6000.0, 6500.0, 7000.0, 7500.0, 8000.0, 8500.0, 9000.0, 9500.0, 10000.0, 10500.0, 11000.0, 11500.0, 12000.0, 12500.0, 13000.0, 13500.0, 14000.0, 14500.0, 15000.0, 15500.0, 16000.0, 16500.0, 17000.0, 17500.0, 18000.0, 18500.0, 19000.0, 19500.0, 20000.0, 20500.0, 21000.0, 21500.0, 22000.0, 23000.0, 24000.0, 25000.0, 27500.0, 30000.0, 32500.0, 35000.0, 40000.0, 45000.0, 50000.0, 55000.0, 60000.0, 65000.0, 70000.0, 75000.0, 80000.0, 85000.0, 90000.0, 95000.0, 100000.0, 105000.0, 110000.0 ]
+            np.testing.assert_array_almost_equal(burnups, expected)
+
+        finally:
+            os.unlink(temp_path)
 
     def test_get_runtime(self):
         """Test extracting runtime from SCALE output using real file."""
