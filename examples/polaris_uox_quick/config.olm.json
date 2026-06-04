@@ -29,7 +29,7 @@
         "states": {
             "_type": "scale.olm.generate.states:full_hypercube",
             "coolant_density": [
-                0.1,		
+                0.1,
                 0.30,
 		0.60,
                 0.75
@@ -72,7 +72,7 @@
     },
     "check": {
         "_type": "scale.olm.check:sequencer",
-        "sequence": [        
+        "sequence": [
         {
             "_type": "scale.olm.check:LowOrderConsistency",
             "name": "loc",

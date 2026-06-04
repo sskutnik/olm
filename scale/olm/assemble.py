@@ -453,7 +453,7 @@ def _process_libraries(obiwan, work_dir, arpinfo, thinned_burnup_list):
 
         # The case for the "system" in the f71.
         # If the F71 is from TRITON, the "system" caseid is -2; otherwise, for
-        # Polaris, the "system" caseid is the integrated FUEL material
+        # Polaris, the "system" caseid is the integrated BASIS material
         caseid = -2
         is_polaris = False
 
@@ -464,7 +464,7 @@ def _process_libraries(obiwan, work_dir, arpinfo, thinned_burnup_list):
             if prod_name != "Polaris":
                 raise ValueError(f"Cannot identify system basis case; case -2 not found in F71 table (for TRITON) and identfied product is {prod_name}")
             is_polaris = True
-            caseid = of.parse_polaris_state_table(of.outfile) # default to looking for "FUEL"
+            caseid = of.parse_polaris_state_table(of.outfile) # default to looking for "BASIS"
 
 
         ii["responses"]["system"] = ii["responses"].pop(f"case({caseid})")

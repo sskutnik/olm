@@ -1274,10 +1274,10 @@ class ScaleOutfile:
         return burnup_list
 
     @staticmethod
-    def parse_polaris_state_table(output, material="FUEL") -> int:
+    def parse_polaris_state_table(output, material="BASIS") -> int:
         """Parse the material state information table to determine the
-          case corresponding to the fuel material (or other requested
-          depletable mixture)"""
+          case corresponding to the system heavy metal basis material
+          (or other requested depletable mixture)"""
 
         with open(output, "r") as f:
             found_integral_edit = False
