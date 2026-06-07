@@ -1,0 +1,36 @@
+=shell
+olm link -p {{_.env.work_dir}} {{_.model.name}}
+end
+
+=origami
+
+libs=[ {{_.model.name}} ]
+
+options{ ft71=all mtu={{history.initialhm}} nburn={{convergence_control.nburn}} }
+
+{% set gd2o3_wtpt = assembly_average.gd2o3_wtpt -%}
+{% set cr2o3_wtpt = assembly_average.cr2o3_wtpt -%}
+{% set uo2_wtpt = 100.0 - gd2o3_wtpt - cr2o3_wtpt -%}
+
+fuelcomp{
+    stdcomp(fuel){ base=uo2
+        iso[
+            92234={{comp.system.uo2.iso.u234}}
+            92235={{comp.system.uo2.iso.u235}}
+            92236={{comp.system.uo2.iso.u236}}
+            92238={{comp.system.uo2.iso.u238}}
+        ]
+    }
+    mix(1){ comps[fuel={{uo2_wtpt}} Gd2O3={{gd2o3_wtpt}} Cr2O3={{cr2o3_wtpt}}] }
+}
+
+modz = [ {{_arpinfo.interpvars.mod_dens}} ]
+pz = [ 1.0 ]
+
+hist[
+  {%- for pb in history.burndata %}
+  cycle{ power={{pb.power}} burn={{pb.burn}} nlib={{convergence_control.nlib}} }
+  {%- endfor %}
+]
+
+end

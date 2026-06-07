@@ -1,0 +1,60 @@
+=polaris
+% --------------------------------------------------------------------------------------------
+%  parameters are: {{state.enrichment}}      - wt% U235
+%                  {{state.coolant_density}} - coolant density (g/cc)
+%                  {{state.specific_power}}  - average specific power (MW/MTHM)
+%                  {{comp.fuel.density}}     - fuel density (g/cc)
+% --------------------------------------------------------------------------------------------
+% Documentation and Notes:
+%  [Author(s)] W. A. Wieselquist
+%  [SCALE Version] SCALE 6.3.3
+%  [Reactor Type] Pressurized Water Reactor, single pin-cell
+%  [Model Info] 2D Polaris single-pin model, {{static.xslib}} cross-section library
+%  [Sources]
+{% for key, src in _.model.sources.items() -%}
+%    [{{key}}] {{src}}
+{% endfor -%}
+%  [Power]
+%    {{state.specific_power}} MW/MTU specific power
+%  [Other Info]
+{%- for nb in _.model.notes %}
+%    {{nb}}
+{%- endfor %}
+title "{{_.model.description}}"
+lib "{{static.xslib}}"
+% ------------------------------------ %
+% geometry
+% ------------------------------------ %
+sys PWR
+geom FuelNode : ASSM 1 {{static.pitch}}
+% ------------------------------------ %
+% comps/mats
+% ------------------------------------ %
+comp fuel : UOX enr={{state.enrichment}} refdens={{comp.fuel.density}}
+mat FUEL.1 : fuel temp=900 dens={{comp.fuel.density}}
+mat GAP.1  : FILLGAS temp=600
+mat CLAD.1 : ZIRC4 temp=600
+mat COOL.1 : WATER dens={{state.coolant_density|round(4,"common")}} temp=575 : boron={{state.boron_ppm}}
+% ------------------------------------ %
+% pins
+% ------------------------------------ %
+pin 1 : {{static.fuelr}} {{static.gapr}} {{static.cladr}}
+      : FUEL.1 GAP.1 CLAD.1
+pinmap 1
+basis ALL=no FUEL=YES
+% ------------------------------------ %
+% depletion history
+% ------------------------------------ %
+power {{state.specific_power}}
+bu {%- for bu_val in time.gwd_burnups %} {{bu_val}}
+{%- endfor %}
+% ------------------------------------ %
+% quick-validation simplifications
+% ------------------------------------ %
+% These transport settings are intentionally low-order for PR/example validation.
+% Remove or tighten them for production reactor-library calculations.
+shield ALL=N
+opt DEPL TrackingSet='Complete' ArchiveF33='ALL'
+opt KEFF NumPolar=1 NumAzim=1 UpscatterSuperGroup=56 CyclicRay=no EigSolver='POWER'
+opt ESSM NumPolar=1 NumAzim=1
+end

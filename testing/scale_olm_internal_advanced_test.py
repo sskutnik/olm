@@ -19,6 +19,7 @@ class TestCopyDoc:
 
     def test_copy_doc_basic(self):
         """Test basic docstring copying functionality."""
+
         def source_func():
             """This is the source docstring."""
             return "source"
@@ -32,6 +33,7 @@ class TestCopyDoc:
 
     def test_copy_doc_with_form_feed(self):
         """Test docstring copying with form feed character."""
+
         def source_func():
             """This is public documentation.\f
             This is internal documentation that should be removed."""
@@ -68,10 +70,10 @@ class TestUtilityFunctions:
     def test_runtime_in_hours(self):
         """Test runtime conversion to hours with string formatting."""
         # The function returns a formatted string, not a float
-        assert internal._runtime_in_hours(3600) == "1"      # 1 hour
-        assert internal._runtime_in_hours(1800) == "0.5"    # 30 minutes
-        assert internal._runtime_in_hours(0) == "0"         # 0 seconds
-        assert internal._runtime_in_hours(7200) == "2"      # 2 hours
+        assert internal._runtime_in_hours(3600) == "1"  # 1 hour
+        assert internal._runtime_in_hours(1800) == "0.5"  # 30 minutes
+        assert internal._runtime_in_hours(0) == "0"  # 0 seconds
+        assert internal._runtime_in_hours(7200) == "2"  # 2 hours
 
     def test_runtime_calculation_edge_cases(self):
         """Test edge cases in runtime calculations."""
@@ -89,7 +91,7 @@ class TestUtilityFunctions:
 
     def test_logger_exists(self):
         """Test that the internal logger is properly configured."""
-        assert hasattr(internal, 'logger')
+        assert hasattr(internal, "logger")
         assert internal.logger is not None
 
     def test_error_message_formatting(self):
@@ -116,10 +118,10 @@ class TestSchemaFunctions:
         indented = internal._indent(text, 4)
 
         # Should add 4 spaces to each line
-        lines = indented.split('\n')
+        lines = indented.split("\n")
         for line in lines[1:]:  # Skip first line which may be different
             if line.strip():  # Only check non-empty lines
-                assert line.startswith('    ')
+                assert line.startswith("    ")
 
     def test_collapsible_json_function(self):
         """Test the _collapsible_json utility function."""
@@ -148,6 +150,7 @@ class TestFileOperations:
 
             # Test copying (pattern used in _make_mini_arpdatatxt)
             import shutil
+
             shutil.copy(source, dest)
 
             assert dest.exists()
@@ -212,7 +215,7 @@ class TestConfigurationPatterns:
         model_data = {
             "name": "test_reactor",
             "work_dir": "/work",
-            "archive_file": "test.arc.h5"
+            "archive_file": "test.arc.h5",
         }
 
         # Pattern: extract values with defaults
@@ -247,7 +250,7 @@ class TestConfigurationPatterns:
 class TestJSONHandling:
     """Test JSON file reading patterns with minimal mocking."""
 
-    @patch('builtins.open', new_callable=mock_open, read_data='{"test": "data"}')
+    @patch("builtins.open", new_callable=mock_open, read_data='{"test": "data"}')
     def test_json_file_handling(self, mock_file):
         """Test JSON file reading patterns used in internal functions."""
         # Test that we can read JSON files as used in many internal functions
@@ -261,22 +264,22 @@ class TestJSONHandling:
 class TestRegistryBasics:
     """Test basic registry patterns without heavy mocking."""
 
-    @patch.dict(os.environ, {'SCALE_OLM_PATH': '/test/path1:/test/path2'})
+    @patch.dict(os.environ, {"SCALE_OLM_PATH": "/test/path1:/test/path2"})
     def test_environment_path_parsing(self):
         """Test environment variable parsing for SCALE_OLM_PATH."""
         # Test that environment variable is parsed correctly
-        scale_olm_path = os.environ.get('SCALE_OLM_PATH', '')
-        paths = scale_olm_path.split(':') if scale_olm_path else []
+        scale_olm_path = os.environ.get("SCALE_OLM_PATH", "")
+        paths = scale_olm_path.split(":") if scale_olm_path else []
 
         assert len(paths) == 2
-        assert '/test/path1' in paths
-        assert '/test/path2' in paths
+        assert "/test/path1" in paths
+        assert "/test/path2" in paths
 
     @patch.dict(os.environ, {}, clear=True)  # Clear SCALE_OLM_PATH
     def test_empty_environment(self):
         """Test behavior with no environment variables."""
-        scale_olm_path = os.environ.get('SCALE_OLM_PATH', '')
-        paths = scale_olm_path.split(':') if scale_olm_path else []
+        scale_olm_path = os.environ.get("SCALE_OLM_PATH", "")
+        paths = scale_olm_path.split(":") if scale_olm_path else []
 
         assert len(paths) == 0
 
@@ -284,17 +287,26 @@ class TestRegistryBasics:
 class TestCommandExecution:
     """Test command execution patterns (only mock subprocess for safety)."""
 
-    @patch('subprocess.Popen')
+    @patch("subprocess.Popen")
     def test_command_output_processing(self, mock_popen):
         """Test command output processing patterns."""
         # Mock successful process
-        mock_process = type('MockProcess', (), {
-            'stdout': type('MockStdout', (), {
-                'readline': lambda: "Output line\n" if not hasattr(self, '_called')
-                           else (setattr(self, '_called', True), "")[1]
-            })(),
-            'returncode': 0
-        })()
+        mock_process = type(
+            "MockProcess",
+            (),
+            {
+                "stdout": type(
+                    "MockStdout",
+                    (),
+                    {
+                        "readline": lambda: "Output line\n"
+                        if not hasattr(self, "_called")
+                        else (setattr(self, "_called", True), "")[1]
+                    },
+                )(),
+                "returncode": 0,
+            },
+        )()
         mock_popen.return_value = mock_process
 
         # This tests the pattern without full implementation details
@@ -304,8 +316,10 @@ class TestCommandExecution:
 class TestEnvironmentLoading:
     """Test environment loading with minimal mocking."""
 
-    @patch('builtins.open', new_callable=mock_open, read_data='{"model": {"name": "test"}}')
-    @patch('pathlib.Path.exists')
+    @patch(
+        "builtins.open", new_callable=mock_open, read_data='{"model": {"name": "test"}}'
+    )
+    @patch("pathlib.Path.exists")
     def test_basic_config_loading(self, mock_exists, mock_file):
         """Test basic configuration loading pattern."""
         mock_exists.return_value = True  # Work dir exists
@@ -317,15 +331,160 @@ class TestEnvironmentLoading:
         assert config["model"]["name"] == "test"
         mock_file.assert_called_with("config.json", "r")
 
-    @patch.dict(os.environ, {'SCALE_DIR': '/test/scale'})
+    @patch.dict(os.environ, {"SCALE_DIR": "/test/scale"})
     def test_scale_dir_environment(self):
         """Test SCALE_DIR environment variable handling."""
-        scale_dir = os.environ.get('SCALE_DIR')
+        scale_dir = os.environ.get("SCALE_DIR")
         scalerte_path = str(Path(scale_dir) / "bin" / "scalerte")
         obiwan_path = str(Path(scale_dir) / "bin" / "obiwan")
 
         assert scalerte_path == str(Path("/test/scale/bin/scalerte"))
         assert obiwan_path == str(Path("/test/scale/bin/obiwan"))
+
+    def test_load_env_writes_resolved_runtime_environment(self, tmp_path, monkeypatch):
+        """Test _load_env writes config/work/runtime paths into env.olm.json."""
+        config_file = tmp_path / "config.olm.json"
+        work_dir = tmp_path / "_custom_work"
+        scale_dir = tmp_path / "scale"
+        scalerte = tmp_path / "custom_scalerte"
+        obiwan = tmp_path / "custom_obiwan"
+        config_file.write_text(
+            json.dumps(
+                {
+                    "model": {
+                        "name": "test_model",
+                        "sources": ["source-a"],
+                        "revision": ["rev-a"],
+                    }
+                }
+            )
+        )
+        monkeypatch.setenv("OLM_WORK_DIR", str(work_dir))
+        monkeypatch.setenv("SCALE_DIR", str(scale_dir))
+        monkeypatch.setenv("OLM_SCALERTE", str(scalerte))
+        monkeypatch.setenv("OLM_OBIWAN", str(obiwan))
+
+        env, config = internal._load_env(str(config_file), nprocs=7)
+
+        assert config["model"]["name"] == "test_model"
+        assert env["config_file"] == str(config_file.resolve())
+        assert env["work_dir"] == str(work_dir)
+        assert env["scalerte"] == str(scalerte)
+        assert env["obiwan"] == str(obiwan)
+        assert env["nprocs"] == 7
+        assert json.loads((work_dir / "env.olm.json").read_text()) == env
+
+    def test_init_writes_named_variant_when_config_dir_omitted(
+        self, tmp_path, monkeypatch
+    ):
+        """Test init uses the variant name as the output directory by default."""
+        monkeypatch.chdir(tmp_path)
+
+        internal.init(config_dir="", variant="triton_uox_pin_quick", list_=False)
+
+        output_dir = tmp_path / "triton_uox_pin_quick"
+        assert (output_dir / "config.olm.json").exists()
+        assert (output_dir / "model.jt.inp").exists()
+        assert (output_dir / "report.jt.rst").exists()
+
+    def test_get_init_variants_are_sorted_and_product_qualified(self):
+        """Test init variants expose product-qualified quick example names."""
+        _init_path, variants = internal._get_init_variants()
+
+        assert variants == sorted(variants)
+        assert "polaris_mox_pin_quick" in variants
+        assert "polaris_uoxgdcr_pin_quick" in variants
+        assert "polaris_uoxgd_pin_quick" in variants
+        assert "polaris_uox_pin_quick" in variants
+        assert "polaris_uoxgd_quick" in variants
+        assert "triton_mox_pin_quick" in variants
+        assert "triton_uox_pin_quick" in variants
+        assert "mox_quick" not in variants
+        assert "uox_quick" not in variants
+        assert "triton_bwr_quick" not in variants
+        assert "triton_uox_gd_cr_quick" not in variants
+        assert "triton_uox_gd_quick" not in variants
+
+    def test_write_init_variant_copies_config_and_template_files(self, tmp_path):
+        """Test writing an init variant copies its config and declared files."""
+        config_dir = tmp_path / "variant"
+
+        internal._write_init_variant("triton_uox_pin_quick", config_dir)
+
+        config = json.loads((config_dir / "config.olm.json").read_text())
+        assert config["model"]["name"] == "triton_uox_pin_quick"
+        assert config["check"]["sequence"][0]["metric"] == "grams_per_initial_hm"
+        assert "t-depl" in (config_dir / "model.jt.inp").read_text()
+        assert "{{model.name}}" in (config_dir / "report.jt.rst").read_text()
+
+    def test_write_init_variant_copies_polaris_config_and_template_files(
+        self, tmp_path
+    ):
+        """Test Polaris init variant copies its product-specific template files."""
+        config_dir = tmp_path / "variant"
+
+        internal._write_init_variant("polaris_uoxgd_quick", config_dir)
+
+        config = json.loads((config_dir / "config.olm.json").read_text())
+        assert config["model"]["name"] == "polaris_uoxgd_quick"
+        assert config["generate"]["artifact_contract"] == "Polaris"
+        assert config["check"]["sequence"][0]["metric"] == "grams_per_initial_hm"
+        assert config["check"]["sequence"][0]["template"].endswith(
+            "system-uox-gd2o3.jt.inp"
+        )
+        assert (
+            config["check"]["sequence"][0]["assembly_average"]["gd2o3_pin_count"] == 4
+        )
+        assert (config_dir / "model.jt.inp").read_text().startswith("=polaris")
+        assert "hi=Polaris" in (config_dir / "report.jt.rst").read_text()
+
+    def test_write_init_variant_copies_polaris_pin_config_and_template_files(
+        self, tmp_path
+    ):
+        """Test Polaris pin init variant copies its single-fuel template files."""
+        config_dir = tmp_path / "variant"
+
+        internal._write_init_variant("polaris_uox_pin_quick", config_dir)
+
+        config = json.loads((config_dir / "config.olm.json").read_text())
+        model_text = (config_dir / "model.jt.inp").read_text()
+        report_text = (config_dir / "report.jt.rst").read_text()
+        assert config["model"]["name"] == "polaris_uox_pin_quick"
+        assert config["generate"]["artifact_contract"] == "Polaris"
+        assert config["generate"]["states"]["coolant_density"] == [0.72]
+        assert config["generate"]["states"]["enrichment"] == [3.0]
+        assert config["assemble"]["fuel_type"] == "UOX"
+        assert config["check"]["sequence"][0]["metric"] == "grams_per_initial_hm"
+        assert config["check"]["sequence"][0]["template"].endswith("system-uox.jt.inp")
+        assert "system-uox-gd2o3.jt.inp" not in json.dumps(config["check"])
+        assert model_text.startswith("=polaris")
+        assert "geom FuelNode : ASSM 1" in model_text
+        assert "pinmap 1" in model_text
+        assert "TrackingSet='Complete'" in model_text
+        assert "ArchiveF33='ALL'" in model_text
+        assert "Method='predictor'" not in model_text
+        assert "hi=Polaris" in report_text
+
+    def test_write_init_variant_copies_gd_cr_quick_files(self, tmp_path):
+        """Test the UOX+Gd2O3+Cr2O3 Polaris pin variant uses BWR inputs."""
+        polaris_dir = tmp_path / "polaris"
+
+        internal._write_init_variant("polaris_uoxgdcr_pin_quick", polaris_dir)
+
+        polaris_config = json.loads((polaris_dir / "config.olm.json").read_text())
+        polaris_model = (polaris_dir / "model.jt.inp").read_text()
+
+        assert polaris_config["model"]["name"] == "polaris_uoxgdcr_pin_quick"
+        assert polaris_config["generate"]["artifact_contract"] == "Polaris"
+        assert polaris_config["generate"]["static"]["system"] == "BWR"
+        assert polaris_config["generate"]["states"]["boron_ppm"] == [0.0]
+        assert polaris_config["check"]["sequence"][0]["template"].endswith(
+            "system-uox-gd2o3-cr2o3.jt.inp"
+        )
+        assert "cr2o3" in polaris_model.lower()
+        assert 'sys {{static.system|default("PWR")}}' in polaris_model
+        assert "basis ALL=no FUEL=YES" in polaris_model
+        assert "quick-validation simplifications" in polaris_model
 
 
 class TestMakefilePatterns:

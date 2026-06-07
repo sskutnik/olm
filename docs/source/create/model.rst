@@ -10,7 +10,7 @@ within OLM.
 
     "model": 
     {
-        "name": "uox_quick",
+        "name": "triton_uox_pin_quick",
         "description": "A 2D t-depl pin cell of W17x17 type.",
         "sources":
         {

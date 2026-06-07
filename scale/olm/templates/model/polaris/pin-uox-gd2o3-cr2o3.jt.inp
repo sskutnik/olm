@@ -1,0 +1,39 @@
+=polaris
+% --------------------------------------------------------------------------------------------
+%  parameters are: {{state.enrichment}}      - wt% U235
+%                  {{state.coolant_density}} - coolant density (g/cc)
+%                  {{state.specific_power}}  - average specific power (MW/MTHM)
+%                  {{comp.fuel.density}}     - fuel density (g/cc)
+%                  {{static.gd2o3_wtpt}}     - fuel Gd2O3 wt%
+%                  {{static.cr2o3_ppm}}      - fuel Cr2O3 dopant ppm
+% --------------------------------------------------------------------------------------------
+title "{{_.model.description}}"
+lib "{{static.xslib}}"
+sys {{static.system|default("PWR")}}
+geom FuelNode : ASSM 1 {{static.pitch}}
+
+comp fuel_base : UOX enr={{state.enrichment}} refdens={{comp.fuel.density}}
+comp fuel : WT GD2O3={{static.gd2o3_wtpt}} fuel_base=-100
+mat FUEL.1 : fuel temp=900 dens={{comp.fuel.density}}{%- if static.cr2o3_ppm > 0 %} : cr2o3={{static.cr2o3_ppm}}{%- endif %}
+mat GAP.1  : FILLGAS temp=600
+mat CLAD.1 : ZIRC4 temp=600
+mat COOL.1 : WATER dens={{state.coolant_density|round(4,"common")}} temp=575 : boron={{state.boron_ppm}}
+
+pin 1 : {{static.fuelr}} {{static.gapr}} {{static.cladr}}
+      : FUEL.1 GAP.1 CLAD.1
+pinmap 1
+basis ALL=no FUEL=YES
+
+power {{state.specific_power}}
+bu {%- for bu_val in time.gwd_burnups %} {{bu_val}}
+{%- endfor %}
+
+% quick-validation simplifications
+% ------------------------------------ %
+% These transport settings are intentionally low-order for PR/example validation.
+% Remove or tighten them for production reactor-library calculations.
+shield ALL=N
+opt DEPL TrackingSet='Complete' ArchiveF33='ALL'
+opt KEFF NumPolar=1 NumAzim=1 UpscatterSuperGroup=56 CyclicRay=no EigSolver='POWER'
+opt ESSM NumPolar=1 NumAzim=1
+end

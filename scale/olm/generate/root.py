@@ -21,7 +21,7 @@ defined as follows.
 .. code::
 
     {
-        "work_dir": "/Users/ww5/olm/mox_quick/_work",
+        "work_dir": "/Users/ww5/olm/triton_mox_pin_quick/_work",
         "static": {...},
         "perms": [
             {
@@ -133,6 +133,7 @@ def jt_expander(
     states: _States,
     comp: _Union[_OneComp, _NestedComp],
     time: _Time,
+    artifact_contract: Literal["TRITON", "Polaris"] = None,
     _model={},
     _env={},
     dynamic: _Union[_Dynamic, None] = None,
@@ -284,18 +285,16 @@ def jt_expander(
         data_file = str(data_path.relative_to(work_path))
         data["_"] = {"model": _model, "data_hash": data_hash, "data_file": data_file}
 
-        # Write the data file in the actual directory with input and hash added. This
-        # is mainly so a user can see the data that is available for template expansion
-        # beside a copy of the template.
         input_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(data_path, "w") as f:
-            json.dump(data, f, indent=4)
 
         # Expand the template and write the input to disk.
         internal.logger.info("Writing permutation", index=i, input_file=input_file)
         if template_text != "":
             filled_text = core.TemplateManager.expand_text(
-                template_text, data, src_path=str(template_path)
+                template_text,
+                data,
+                src_path=str(template_path),
+                search_paths=[Path(template_path).parent],
             )
         else:
             internal.logger.warning(
@@ -303,8 +302,27 @@ def jt_expander(
             )
             filled_text = core.TemplateManager._tree_print(data)
 
+        data["_scale"] = core.ScaleInput.classify_text(filled_text)
+        if artifact_contract is not None:
+            rendered_contract = data["_scale"]["artifact_contract"]
+            if rendered_contract != artifact_contract:
+                raise ValueError(
+                    "Configured artifact_contract="
+                    + artifact_contract
+                    + " does not match rendered SCALE input artifact_contract="
+                    + str(rendered_contract)
+                    + " for input_file="
+                    + input_file
+                )
+
         with open(input_path, "w") as f:
             f.write(filled_text)
+
+        # Write the data file in the actual directory with input and hash added. This
+        # is mainly so a user can see the data that is available for template expansion
+        # beside a copy of the template.
+        with open(data_path, "w") as f:
+            json.dump(data, f, indent=4)
 
         # Return the final thing in a permutations list.
         perms2.append(data)

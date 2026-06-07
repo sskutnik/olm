@@ -40,6 +40,8 @@ It has the following basic modes.
 
     Quickstart <quickstart.rst>
     Step-by-step <step-by-step.rst>
+    Low-order consistency <low-order-consistency.rst>
+    ORIGAMI verification guidance <origami-verification-guidance.rst>
     config.olm.json <config-file.rst>
     CLI Reference <cli_reference.rst>
     API Reference <api_reference.rst>

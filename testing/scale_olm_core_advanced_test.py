@@ -9,9 +9,277 @@ import pytest
 import numpy as np
 import tempfile
 import os
+from pathlib import Path
 from unittest.mock import patch
 
 import scale.olm.core as core
+
+
+_TEMPLATE_DIR = Path(core.__file__).parent / "templates"
+
+
+class TestTemplateManager:
+    """Test template expansion and inheritance behavior."""
+
+    def test_expand_uses_template_manager_search_paths_for_inheritance(self, tmp_path):
+        """TemplateManager.expand should find parents from its configured roots."""
+        template_root = tmp_path / "templates"
+        child_dir = template_root / "child"
+        child_dir.mkdir(parents=True)
+        (template_root / "base.jt.inp").write_text(
+            "base:{% block body %}default{% endblock %}"
+        )
+        (child_dir / "model.jt.inp").write_text(
+            '{% extends "base.jt.inp" %}{% block body %}{{ noun }}{% endblock %}'
+        )
+
+        tm = core.TemplateManager(paths=[template_root], include_env=False)
+
+        assert tm.expand("child/model.jt.inp", {"noun": "fuel"}) == "base:fuel"
+
+    def test_expand_file_uses_source_directory_not_cwd_parent(
+        self, tmp_path, monkeypatch
+    ):
+        """expand_file should resolve inherited templates from the source path."""
+        template_dir = tmp_path / "config"
+        template_dir.mkdir()
+        work_dir = tmp_path / "work"
+        work_dir.mkdir()
+        (tmp_path / "base.jt.inp").write_text(
+            "wrong:{% block body %}default{% endblock %}"
+        )
+        (template_dir / "base.jt.inp").write_text(
+            "right:{% block body %}default{% endblock %}"
+        )
+        child = template_dir / "child.jt.inp"
+        child.write_text(
+            '{% extends "base.jt.inp" %}{% block body %}{{ noun }}{% endblock %}'
+        )
+        monkeypatch.chdir(work_dir)
+
+        assert core.TemplateManager.expand_file(child, {"noun": "fuel"}) == "right:fuel"
+
+    def test_expand_text_renders_floats_as_scientific(self):
+        """Template float output should preserve a deterministic scientific form."""
+        text = "x={{ x }} y={{ y }}"
+        data = {"x": 39.4934, "y": 1.0}
+
+        rendered = core.TemplateManager.expand_text(text, data)
+
+        assert rendered == "x=3.94934000000000e+01 y=1.00000000000000e+00"
+
+    def test_tree_print_renders_floats_as_scientific(self):
+        """Fallback generated input should use the same float rendering policy."""
+        rendered = core.TemplateManager._tree_print({"x": [39.4934], "y": 1.0})
+
+        assert "x[0]=3.94934000000000e+01" in rendered
+        assert "y=1.00000000000000e+00" in rendered
+
+    def test_origami_uox_template_requires_nlib(self):
+        """LowOrderConsistency ORIGAMI templates require explicit nlib."""
+        template = _TEMPLATE_DIR / "model/origami/system-uox.jt.inp"
+        data = {
+            "_": {
+                "env": {"work_dir": "/tmp/olm-work"},
+                "model": {"name": "uox-pin-quick"},
+            },
+            "history": {
+                "initialhm": 1.0,
+                "burndata": [{"power": 40.0, "burn": 25.0}],
+            },
+            "_arpinfo": {
+                "interpvars": {
+                    "enrichment": 3.0,
+                    "mod_dens": 0.72,
+                }
+            },
+            "comp": {
+                "system": {
+                    "uo2": {
+                        "iso": {
+                            "u234": 0.0254268158073155,
+                            "u235": 3.0,
+                            "u236": 0.0138,
+                            "u238": 96.9607731841927,
+                        }
+                    }
+                }
+            },
+            "convergence_control": {"nburn": 10},
+        }
+
+        with pytest.raises(ValueError, match="nlib"):
+            core.TemplateManager.expand_file(template, data)
+
+    def test_origami_uox_template_requires_nburn(self):
+        """LowOrderConsistency ORIGAMI templates require explicit nburn."""
+        template = _TEMPLATE_DIR / "model/origami/system-uox.jt.inp"
+        data = {
+            "_": {
+                "env": {"work_dir": "/tmp/olm-work"},
+                "model": {"name": "uox-pin-quick"},
+            },
+            "history": {
+                "initialhm": 1.0,
+                "burndata": [{"power": 40.0, "burn": 25.0}],
+            },
+            "_arpinfo": {
+                "interpvars": {
+                    "enrichment": 3.0,
+                    "mod_dens": 0.72,
+                }
+            },
+            "comp": {
+                "system": {
+                    "uo2": {
+                        "iso": {
+                            "u234": 0.0254268158073155,
+                            "u235": 3.0,
+                            "u236": 0.0138,
+                            "u238": 96.9607731841927,
+                        }
+                    }
+                }
+            },
+            "convergence_control": {"nlib": 1},
+        }
+
+        with pytest.raises(ValueError, match="nburn"):
+            core.TemplateManager.expand_file(template, data)
+
+    def test_origami_uox_gd2o3_template_smears_bwr_gd_pins(self):
+        """Polaris BWR ORIGAMI input includes mass-smeared Gd2O3."""
+        template = _TEMPLATE_DIR / "model/origami/system-uox-gd2o3.jt.inp"
+        data = {
+            "_": {
+                "env": {"work_dir": "/tmp/olm-work"},
+                "model": {"name": "polaris_uoxgd_quick"},
+            },
+            "history": {
+                "initialhm": 1.0,
+                "burndata": [{"power": 25.0, "burn": 20.0}],
+            },
+            "_arpinfo": {"interpvars": {"mod_dens": 0.75}},
+            "comp": {
+                "system": {
+                    "uo2": {
+                        "iso": {
+                            "u234": 0.007744690378774326,
+                            "u235": 0.9995296664900924,
+                            "u236": 0.004597836465854426,
+                            "u238": 98.98812780666528,
+                        }
+                    }
+                }
+            },
+            "assembly_average": {
+                "gd2o3_pin_wtpt": 3.0,
+                "gd2o3_pin_count": 4,
+                "fuel_pin_count": 49,
+                "uox_fuel_density": 10.4,
+                "gd2o3_fuel_density": 10.19,
+            },
+            "convergence_control": {
+                "nburn": 10,
+                "nlib": 4,
+            },
+        }
+
+        rendered = core.TemplateManager.expand_file(template, data)
+
+        assert "Gd2O3=2.40349084047488e-01" in rendered
+        assert "fuel=9.97596509159525e+01" in rendered
+        assert "nburn=10" in rendered
+        assert "nlib=4" in rendered
+
+    def test_polaris_uox_pin_template_renders_single_fuel_material(self):
+        """Polaris UOX pin template uses one FUEL material and classifies as Polaris."""
+        data = {
+            "_": {
+                "model": {
+                    "description": "A 2D Polaris PWR UOX pin cell.",
+                    "notes": ["single fuel material"],
+                    "sources": {"1": "source"},
+                },
+            },
+            "state": {
+                "boron_ppm": 600.0,
+                "coolant_density": 0.72,
+                "enrichment": 3.0,
+                "specific_power": 40.0,
+            },
+            "static": {
+                "xslib": "broad_lwr",
+                "pitch": 1.26,
+                "fuelr": 0.4096,
+                "gapr": 0.4180,
+                "cladr": 0.4750,
+            },
+            "comp": {"fuel": {"density": 10.4}},
+            "time": {"gwd_burnups": [0.5, 1.0]},
+        }
+
+        rendered = core.TemplateManager.expand_file(
+            _TEMPLATE_DIR / "model/polaris/pin-uox.jt.inp", data
+        )
+        classification = core.ScaleInput.classify_text(rendered)
+
+        assert rendered.startswith("=polaris")
+        assert "geom FuelNode : ASSM 1" in rendered
+        assert "comp fuel : UOX enr=3.00000000000000e+00" in rendered
+        assert "mat FUEL.1 : fuel" in rendered
+        assert "pinmap 1" in rendered
+        assert "basis ALL=no FUEL=YES" in rendered
+        assert "TrackingSet='Complete'" in rendered
+        assert "ArchiveF33='ALL'" in rendered
+        assert "Method='predictor'" not in rendered
+        assert classification["artifact_contract"] == "Polaris"
+
+
+class TestScaleInput:
+    """Test rendered SCALE input classification."""
+
+    @pytest.mark.parametrize(
+        "sequence",
+        [
+            "t-depl",
+            "t-depl-1d",
+            "t5-depl",
+            "t5-depl-shift",
+            "t6-depl",
+            "t6-depl-shift",
+            "t6-depl-custom",
+        ],
+    )
+    def test_classify_text_maps_triton_prefixes(self, sequence):
+        """TRITON depletion contracts are classified from supported prefixes."""
+        classification = core.ScaleInput.classify_text(
+            f"=origen\n={sequence} parm=(bonami)\nend\n"
+        )
+
+        assert classification["sequences"] == ["origen", sequence]
+        assert classification["artifact_contract"] == "TRITON"
+        assert core.ScaleOutfile.get_product_name(sequence) == "TRITON"
+
+    @pytest.mark.parametrize("sequence", ["polaris", "polaris_6.3", "polaris-custom"])
+    def test_classify_text_maps_polaris_prefixes(self, sequence):
+        """Polaris contracts are classified from supported prefixes."""
+        classification = core.ScaleInput.classify_text(f"={sequence}\nend\n")
+
+        assert classification["artifact_contract"] == "Polaris"
+        assert core.ScaleOutfile.get_product_name(sequence) == "Polaris"
+
+    def test_classify_text_rejects_mixed_depletion_contracts(self):
+        """Inputs with both TRITON and Polaris depletion contracts are ambiguous."""
+        with pytest.raises(ValueError, match="Ambiguous SCALE depletion"):
+            core.ScaleInput.classify_text("=t-depl\n=polaris\n")
+
+    def test_classify_text_leaves_unsupported_inputs_uncontracted(self):
+        """Unsupported SCALE inputs do not invent an artifact contract."""
+        classification = core.ScaleInput.classify_text("% comment\n=origen\nend\n")
+
+        assert classification["sequences"] == ["origen"]
+        assert classification["artifact_contract"] is None
 
 
 class TestCompositionManager:
@@ -27,7 +295,7 @@ class TestCompositionManager:
                 "element": "H",
                 "isomericState": 0,
                 "mass": 1.007825,
-                "massNumber": 1
+                "massNumber": 1,
             },
             "0001002": {
                 "IZZZAAA": "0001002",
@@ -35,7 +303,7 @@ class TestCompositionManager:
                 "element": "H",
                 "isomericState": 0,
                 "mass": 2.014102,
-                "massNumber": 2
+                "massNumber": 2,
             },
             "0092235": {
                 "IZZZAAA": "0092235",
@@ -43,7 +311,7 @@ class TestCompositionManager:
                 "element": "U",
                 "isomericState": 0,
                 "mass": 235.044,
-                "massNumber": 235
+                "massNumber": 235,
             },
             "0094239": {
                 "IZZZAAA": "0094239",
@@ -51,8 +319,8 @@ class TestCompositionManager:
                 "element": "Pu",
                 "isomericState": 0,
                 "mass": 239.052,
-                "massNumber": 239
-            }
+                "massNumber": 239,
+            },
         }
 
     @pytest.fixture
@@ -134,7 +402,7 @@ class TestCompositionManager:
         # Test with real molar masses
         m_data = {"u235": 235.044, "pu239": 239.052}
         molar_mass = core.CompositionManager.grams_per_mol(iso_wts, m_data)
-        expected = 1.0 / (0.5/235.044 + 0.5/239.052)
+        expected = 1.0 / (0.5 / 235.044 + 0.5 / 239.052)
         assert molar_mass == pytest.approx(expected, abs=0.01)
 
 
@@ -191,14 +459,12 @@ class TestBurnupHistory:
         assert len(operations) >= 3  # At least some operations
         assert operations[0]["start"] == 0
 
-
-    @patch('scale.olm.core.run_command')
+    @patch("scale.olm.core.run_command")
     def test_obiwan_get_f71_history_s63(self, mock_obiwan):
-
         mock_obiwan.return_value = """
 
              pos         time        power         flux      fluence       energy    initialhm libpos   case   step DCGNAB
-             (-)          (s)         (MW)    (n/cm2-s)      (n/cm2)        (MWd)      (MTIHM)    (-)    (-)    (-)    (-)               
+             (-)          (s)         (MW)    (n/cm2-s)      (n/cm2)        (MWd)      (MTIHM)    (-)    (-)    (-)    (-)
                1  0.00000e+00  4.00000e+01  8.11143e+14  0.00000e+00  0.00000e+00  1.00000e+00      1      1      0 DC----
                2  2.16000e+06  4.00000e+01  6.22529e+14  1.53582e+21  1.00000e+03  1.00000e+00      1      1     10 DC----
                3  2.16000e+07  4.00000e+01  4.26681e+14  8.78948e+21  1.00000e+04  1.00000e+00      2      1     10 DC----
@@ -211,31 +477,54 @@ class TestBurnupHistory:
         # TRITON: power is over the interval
         triton_hist = core.Obiwan.get_history_from_f71("obiwan.exe", "perm000.f71", 1)
         mock_obiwan.assert_called_once()
-        expected_hist = {"burndata": [{"power": 40.0, "burn": 25.0}, {"power": 40.0, "burn": 225.0}, {"power": 40.0, "burn": 375.0}, {"power": 40.0, "burn": 625.0}, {"power": 40, "burn": 500.0}, {"power": 40.0, "burn": 500.0}, {"power": 40.0, "burn": 500.0}], "initialhm": 1.0}
+        expected_hist = {
+            "burndata": [
+                {"power": 40.0, "burn": 25.0},
+                {"power": 40.0, "burn": 225.0},
+                {"power": 40.0, "burn": 375.0},
+                {"power": 40.0, "burn": 625.0},
+                {"power": 40, "burn": 500.0},
+                {"power": 40.0, "burn": 500.0},
+                {"power": 40.0, "burn": 500.0},
+            ],
+            "initialhm": 1.0,
+        }
 
-        np.testing.assert_almost_equal(expected_hist["initialhm"], triton_hist["initialhm"])
+        np.testing.assert_almost_equal(
+            expected_hist["initialhm"], triton_hist["initialhm"]
+        )
         assert len(expected_hist["burndata"]) == len(triton_hist["burndata"])
-        for t_burndata, e_burndata in zip(triton_hist["burndata"], expected_hist["burndata"]):
+        for t_burndata, e_burndata in zip(
+            triton_hist["burndata"], expected_hist["burndata"]
+        ):
             np.testing.assert_almost_equal(t_burndata["power"], e_burndata["power"])
             np.testing.assert_almost_equal(t_burndata["burn"], e_burndata["burn"])
 
-        # Polaris gives power at the end of the timestep, so modify the last 
+        # Polaris gives power at the end of the timestep, so modify the last
         # step accordingly and verify our history is still as-expected
-        polaris_rv =  "\n".join(mock_obiwan.return_value.split("\n")[:-2]) + \
-"""
+        polaris_rv = (
+            "\n".join(mock_obiwan.return_value.split("\n")[:-2])
+            + """
                8  2.37600e+08  0.10000e-03  0.00000e+00  1.87415e+22  1.10000e+05  1.00000e+00      7      1     10 DC----
 """
-        polaris_hist = core.Obiwan.get_history_from_f71("obiwan.exe", "perm000.f71", 1, is_polaris=True)
-        assert mock_obiwan.call_count == 2        
-        np.testing.assert_almost_equal(expected_hist["initialhm"], polaris_hist["initialhm"])
+        )
+        mock_obiwan.return_value = polaris_rv
+        polaris_hist = core.Obiwan.get_history_from_f71(
+            "obiwan.exe", "perm000.f71", 1, is_polaris=True
+        )
+        assert mock_obiwan.call_count == 2
+        np.testing.assert_almost_equal(
+            expected_hist["initialhm"], polaris_hist["initialhm"]
+        )
 
         assert len(expected_hist["burndata"]) == len(polaris_hist["burndata"])
-        for p_burndata, e_burndata in zip(polaris_hist["burndata"], expected_hist["burndata"]):
+        for p_burndata, e_burndata in zip(
+            polaris_hist["burndata"], expected_hist["burndata"]
+        ):
             np.testing.assert_almost_equal(p_burndata["power"], e_burndata["power"])
             np.testing.assert_almost_equal(p_burndata["burn"], e_burndata["burn"])
 
-
-    @patch('scale.olm.core.run_command')
+    @patch("scale.olm.core.run_command")
     def test_obiwan_get_f71_history_s70(self, mock_obiwan):
         mock_obiwan.return_value = """
 
@@ -254,12 +543,27 @@ class TestBurnupHistory:
         # TRITON: power is over the interval
         triton_hist = core.Obiwan.get_history_from_f71("obiwan.exe", "perm000.f71", 10)
         mock_obiwan.assert_called_once()
-        expected_hist = {"burndata": [{"power": 39.9302, "burn": 25.0}, {"power": 39.9294, "burn": 225.0}, {"power": 39.9271, "burn": 375.0}, {"power": 39.9215, "burn": 312.5}, {"power": 39.9155, "burn": 312.5}, {"power": 39.9087, "burn": 250.0}, {"power": 39.9026, "burn": 250.0 }], "initialhm": 1.0}
+        expected_hist = {
+            "burndata": [
+                {"power": 39.9302, "burn": 25.0},
+                {"power": 39.9294, "burn": 225.0},
+                {"power": 39.9271, "burn": 375.0},
+                {"power": 39.9215, "burn": 312.5},
+                {"power": 39.9155, "burn": 312.5},
+                {"power": 39.9087, "burn": 250.0},
+                {"power": 39.9026, "burn": 250.0},
+            ],
+            "initialhm": 1.0,
+        }
 
-        np.testing.assert_almost_equal(expected_hist["initialhm"], triton_hist["initialhm"])
+        np.testing.assert_almost_equal(
+            expected_hist["initialhm"], triton_hist["initialhm"]
+        )
 
         assert len(expected_hist["burndata"]) == len(triton_hist["burndata"])
-        for t_burndata, e_burndata in zip(triton_hist["burndata"], expected_hist["burndata"]):
+        for t_burndata, e_burndata in zip(
+            triton_hist["burndata"], expected_hist["burndata"]
+        ):
             np.testing.assert_almost_equal(t_burndata["power"], e_burndata["power"])
             np.testing.assert_almost_equal(t_burndata["burn"], e_burndata["burn"])
 
@@ -281,14 +585,58 @@ class TestBurnupHistory:
               7  1.29600e+08  3.99026e+01  4.18116e+14  4.41673e+22  5.98813e+04  1.00000e+00  1.09091e+05      7     10      6 DC----
               8  1.51200e+08  0.39026e-03  0.00000e+00  5.31986e+22  6.98569e+04  1.00000e+00  1.09091e+05      8     10      7 DC----
 """
-        polaris_hist = core.Obiwan.get_history_from_f71("obiwan.exe", "perm000.f71", 10, is_polaris=True)
+        polaris_hist = core.Obiwan.get_history_from_f71(
+            "obiwan.exe", "perm000.f71", 10, is_polaris=True
+        )
         assert mock_obiwan.call_count == 2
-        np.testing.assert_almost_equal(expected_hist["initialhm"], polaris_hist["initialhm"])
+        np.testing.assert_almost_equal(
+            expected_hist["initialhm"], polaris_hist["initialhm"]
+        )
 
         assert len(expected_hist["burndata"]) == len(polaris_hist["burndata"])
-        for p_burndata, e_burndata in zip(polaris_hist["burndata"], expected_hist["burndata"]):
+        for p_burndata, e_burndata in zip(
+            polaris_hist["burndata"], expected_hist["burndata"]
+        ):
             np.testing.assert_almost_equal(p_burndata["power"], e_burndata["power"])
             np.testing.assert_almost_equal(p_burndata["burn"], e_burndata["burn"])
+
+    @patch("scale.olm.core.run_command")
+    def test_obiwan_get_burnups_from_f71(self, mock_obiwan):
+        """Calculate cumulative burnup from OBIWAN F71 info table energy data."""
+        mock_obiwan.return_value = """
+
+            pos         time        power         flux      fluence       energy    initialhm       volume libpos   case   step DCGNAB
+            (-)          (s)         (MW)   (n/cm^2-s)     (n/cm^2)        (MWd)      (MTIHM)       (cm^3)    (-)    (-)    (-)    (-)
+              1  0.00000e+00  0.00000e+00  0.00000e+00  0.00000e+00  0.00000e+00  2.00000e+00  1.09091e+05      1     10      0 DC----
+              2  2.16000e+06  3.99302e+01  2.77611e+14  5.99639e+20  1.00000e+03  2.00000e+00  1.09091e+05      2     10      1 DC----
+              3  2.16000e+07  3.99294e+01  2.88762e+14  6.21316e+21  1.00000e+04  2.00000e+00  1.09091e+05      3     10      2 DC----
+              4  2.16000e+07  3.99294e+01  2.88762e+14  6.21316e+21  7.00000e+03  2.00000e+00  1.09091e+05      3     20      2 DC----
+"""
+
+        burnups = core.Obiwan.get_burnups_from_f71("obiwan.exe", "perm000.f71", 10)
+        initialhm = core.Obiwan.get_initialhm_from_f71("obiwan.exe", "perm000.f71", 10)
+
+        mock_obiwan.assert_any_call(
+            "obiwan.exe view -format=info perm000.f71", echo=False
+        )
+        assert mock_obiwan.call_count == 2
+        np.testing.assert_array_almost_equal(burnups, [0.0, 500.0, 5000.0])
+        assert initialhm == 2.0
+
+    @patch("scale.olm.core.run_command")
+    def test_obiwan_get_burnups_from_f71_requires_initialhm(self, mock_obiwan):
+        """Reject F71 info rows that cannot define MWd/MTIHM burnup."""
+        mock_obiwan.return_value = """
+
+            pos         time        power         flux      fluence       energy    initialhm libpos   case   step DCGNAB
+            (-)          (s)         (MW)    (n/cm2-s)      (n/cm2)        (MWd)      (MTIHM)    (-)    (-)    (-)    (-)
+              1  0.00000e+00  0.00000e+00  0.00000e+00  0.00000e+00  0.00000e+00  0.00000e+00      1     10      0 DC----
+"""
+
+        with pytest.raises(ValueError, match="initialhm=0.0"):
+            core.Obiwan.get_burnups_from_f71("obiwan.exe", "perm000.f71", 10)
+        with pytest.raises(ValueError, match="initialhm=0.0"):
+            core.Obiwan.get_initialhm_from_f71("obiwan.exe", "perm000.f71", 10)
 
 
 class TestScaleOutfile:
@@ -312,83 +660,55 @@ Sub-Interval   Depletion   Sub-interval    Specific      Burn Length  Decay Leng
 Some footer text...
 """
 
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.out') as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".out") as f:
             f.write(sample_output)
             temp_path = f.name
 
         try:
             burnups = core.ScaleOutfile.parse_burnups_from_triton_output(temp_path)
+            rows = core.ScaleOutfile.parse_triton_library_table(temp_path)
 
             expected = [0.0, 500.0, 7000.0, 19000.0, 31250.0]
             assert len(burnups) == 5
             np.testing.assert_array_almost_equal(burnups, expected)
+            assert rows == [
+                {"power": 40.000, "burn": 25.000, "burnup": 500.0},
+                {"power": 40.000, "burn": 300.000, "burnup": 7000.0},
+                {"power": 40.000, "burn": 300.000, "burnup": 19000.0},
+                {"power": 40.000, "burn": 312.500, "burnup": 31250.0},
+            ]
 
         finally:
             os.unlink(temp_path)
 
-    def test_parse_burnups_from_polaris_t16(self):
-        """Test parsing of the burnups from a Polaris t16 file using a real output"""
+    def test_parse_polaris_state_table_returns_requested_material_case(self, tmp_path):
+        """Parse requested material-class cases from a Polaris output table."""
+        output_file = tmp_path / "polaris.out"
+        output_file.write_text(
+            """
+header
+Integrated edits for each material class
+| 7 | other | FUEL
+| 9 | other | BASIS
+"""
+        )
 
-        sample_t16 = """' Record 1: nblk, lblk, record sizes.
-    13  1000  5120    14   208     0     0     0     3   115    16   100   100
-' Record 2: dimensioning data.
-        69         0         1         2         1         6         4         8         1        10
-        10         6         1         0
-' Record 3: depletion data.
-' Burnups
- 0.000000E+00 1.000000E-01 2.500000E-01 5.000000E-01 1.000000E+00 1.500000E+00
- 2.000000E+00 2.500000E+00 3.000000E+00 3.500000E+00 4.000000E+00 4.500000E+00
- 5.000000E+00 5.500000E+00 6.000000E+00 6.500000E+00 7.000000E+00 7.500000E+00
- 8.000000E+00 8.500000E+00 9.000000E+00 9.500000E+00 1.000000E+01 1.050000E+01
- 1.100000E+01 1.150000E+01 1.200000E+01 1.250000E+01 1.300000E+01 1.350000E+01
- 1.400000E+01 1.450000E+01 1.500000E+01 1.550000E+01 1.600000E+01 1.650000E+01
- 1.700000E+01 1.750000E+01 1.800000E+01 1.850000E+01 1.900000E+01 1.950000E+01
- 2.000000E+01 2.050000E+01 2.100000E+01 2.150000E+01 2.200000E+01 2.300000E+01
- 2.400000E+01 2.500000E+01 2.750000E+01 3.000000E+01 3.250000E+01 3.500000E+01
- 4.000000E+01 4.500000E+01 5.000000E+01 5.500000E+01 6.000000E+01 6.500000E+01
- 7.000000E+01 7.500000E+01 8.000000E+01 8.500000E+01 9.000000E+01 9.500000E+01
- 1.000000E+02 1.050000E+02 1.100000E+02
-' Time
- 0.000000E+00 3.831418E+00 9.578544E+00 1.915709E+01 3.831417E+01 5.747126E+01
- 7.662835E+01 9.578544E+01 1.149425E+02 1.340996E+02 1.532567E+02 1.724138E+02
- 1.915709E+02 2.107280E+02 2.298851E+02 2.490421E+02 2.681992E+02 2.873563E+02
- 3.065134E+02 3.256705E+02 3.448276E+02 3.639847E+02 3.831418E+02 4.022989E+02
- 4.214559E+02 4.406130E+02 4.597701E+02 4.789272E+02 4.980843E+02 5.172414E+02
- 5.363984E+02 5.555555E+02 5.747126E+02 5.938698E+02 6.130268E+02 6.321839E+02
- 6.513410E+02 6.704981E+02 6.896552E+02 7.088123E+02 7.279694E+02 7.471265E+02
- 7.662835E+02 7.854406E+02 8.045977E+02 8.237548E+02 8.429119E+02 8.812261E+02
- 9.195402E+02 9.578544E+02 1.053640E+03 1.149425E+03 1.245211E+03 1.340996E+03
- 1.532567E+03 1.724138E+03 1.915709E+03 2.107280E+03 2.298851E+03 2.490421E+03
- 2.681992E+03 2.873563E+03 3.065134E+03 3.256705E+03 3.448276E+03 3.639847E+03
- 3.831418E+03 4.022989E+03 4.214560E+03
-' Power
- 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01
- 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01
- 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01
- 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01
- 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01
- 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01
- 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01
- 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01
- 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01
- 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01
- 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01 2.610000E+01
- 2.610000E+01 2.610000E+01 2.610000E+01
- ... additional records ..."""
+        assert core.ScaleOutfile.parse_polaris_state_table(output_file) == 7
+        assert core.ScaleOutfile.parse_polaris_state_table(output_file, "FUEL") == 7
+        assert core.ScaleOutfile.parse_polaris_state_table(output_file, "BASIS") == 9
 
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.t16') as f:
-            f.write(sample_t16)
-            temp_path = f.name
+    def test_parse_polaris_state_table_defaults_to_fuel_case(self, tmp_path):
+        """Default to the Polaris FUEL material-class case."""
+        output_file = tmp_path / "polaris.out"
+        output_file.write_text(
+            """
+header
+Integrated edits for each material class
+| 7 | other | FUEL
+"""
+        )
 
-        try:
-            burnups = core.ScaleOutfile.parse_burnups_from_polaris_t16(temp_path)
-
-            assert len(burnups) == 69
-            expected = [0.0, 100.0, 250.0, 500.0, 1000.0, 1500.0, 2000.0, 2500.0, 3000.0, 3500.0, 4000.0, 4500.0, 5000.0, 5500.0, 6000.0, 6500.0, 7000.0, 7500.0, 8000.0, 8500.0, 9000.0, 9500.0, 10000.0, 10500.0, 11000.0, 11500.0, 12000.0, 12500.0, 13000.0, 13500.0, 14000.0, 14500.0, 15000.0, 15500.0, 16000.0, 16500.0, 17000.0, 17500.0, 18000.0, 18500.0, 19000.0, 19500.0, 20000.0, 20500.0, 21000.0, 21500.0, 22000.0, 23000.0, 24000.0, 25000.0, 27500.0, 30000.0, 32500.0, 35000.0, 40000.0, 45000.0, 50000.0, 55000.0, 60000.0, 65000.0, 70000.0, 75000.0, 80000.0, 85000.0, 90000.0, 95000.0, 100000.0, 105000.0, 110000.0 ]
-            np.testing.assert_array_almost_equal(burnups, expected)
-
-        finally:
-            os.unlink(temp_path)
+        assert core.ScaleOutfile.parse_polaris_state_table(output_file) == 7
 
     def test_get_runtime(self):
         """Test extracting runtime from SCALE output using real file."""
@@ -398,7 +718,7 @@ t-depl finished. used 35.2481 seconds.
 More output text...
 """
 
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.out') as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".out") as f:
             f.write(sample_output)
             temp_path = f.name
 
@@ -417,13 +737,13 @@ class TestReactorLibraryUtilities:
         """Test degenerate axis value duplication (comprehensive mathematical testing)."""
         test_cases = [
             # (input, expected_delta)
-            (0.0, 0.05),           # Zero case
-            (0.723, 0.05),         # Typical reactor parameter
-            (-1.0, 0.05),          # Negative value
-            (100.0, 5.0),          # Large value (5% of 100)
-            (1e-12, 0.05),         # Very small value
-            (-50.0, 2.5),          # Large negative (5% of 50)
-            (2.0, 0.1),            # Moderate value (5% of 2)
+            (0.0, 0.05),  # Zero case
+            (0.723, 0.05),  # Typical reactor parameter
+            (-1.0, 0.05),  # Negative value
+            (100.0, 5.0),  # Large value (5% of 100)
+            (1e-12, 0.05),  # Very small value
+            (-50.0, 2.5),  # Large negative (5% of 50)
+            (2.0, 0.1),  # Moderate value (5% of 2)
         ]
 
         for x0, expected_delta in test_cases:
@@ -440,9 +760,9 @@ class TestReactorLibraryUtilities:
         """Test index calculation for library interpolation."""
         axes_names = np.array(["mod_dens", "enrichment", "burnup"])
         axes_values = [
-            np.array([0.1, 0.5, 0.9]),      # mod_dens
-            np.array([2.0, 3.5, 5.0]),      # enrichment
-            np.array([0, 1000, 5000])       # burnup
+            np.array([0.1, 0.5, 0.9]),  # mod_dens
+            np.array([2.0, 3.5, 5.0]),  # enrichment
+            np.array([0, 1000, 5000]),  # burnup
         ]
 
         # Test exact matches
@@ -455,13 +775,13 @@ class TestReactorLibraryUtilities:
         """Test degenerate axis value duplication (comprehensive mathematical testing)."""
         test_cases = [
             # (input, expected_delta)
-            (0.0, 0.05),           # Zero case
-            (0.723, 0.05),         # Typical reactor parameter
-            (-1.0, 0.05),          # Negative value
-            (100.0, 5.0),          # Large value (5% of 100)
-            (1e-12, 0.05),         # Very small value
-            (-50.0, 2.5),          # Large negative (5% of 50)
-            (2.0, 0.1),            # Moderate value (5% of 2)
+            (0.0, 0.05),  # Zero case
+            (0.723, 0.05),  # Typical reactor parameter
+            (-1.0, 0.05),  # Negative value
+            (100.0, 5.0),  # Large value (5% of 100)
+            (1e-12, 0.05),  # Very small value
+            (-50.0, 2.5),  # Large negative (5% of 50)
+            (2.0, 0.1),  # Moderate value (5% of 2)
         ]
 
         for x0, expected_delta in test_cases:
@@ -475,6 +795,59 @@ class TestReactorLibraryUtilities:
             assert np.isfinite(x1), f"x1 ({x1}) should be finite"
 
 
+class TestArpInfo:
+    """Test ARPDATA parsing."""
+
+    def test_init_block_classifies_mox_from_header_not_name_prefix(self):
+        """A TRITON MOX library name does not have to start with mox_."""
+        block = """
+2 3 1 2 6
+4.0
+10.0
+50.0
+60.0
+70.0
+1
+0.65
+0.75
+'triton_mox_pin_quick_e0400v5000w0650.h5'
+'triton_mox_pin_quick_e1000v5000w0650.h5'
+'triton_mox_pin_quick_e0400v6000w0650.h5'
+'triton_mox_pin_quick_e1000v6000w0650.h5'
+'triton_mox_pin_quick_e0400v7000w0650.h5'
+'triton_mox_pin_quick_e1000v7000w0650.h5'
+'triton_mox_pin_quick_e0400v5000w0750.h5'
+'triton_mox_pin_quick_e1000v5000w0750.h5'
+'triton_mox_pin_quick_e0400v6000w0750.h5'
+'triton_mox_pin_quick_e1000v6000w0750.h5'
+'triton_mox_pin_quick_e0400v7000w0750.h5'
+'triton_mox_pin_quick_e1000v7000w0750.h5'
+0.0
+500.0
+7000.0
+19000.0
+31250.0
+43750.0
+"""
+        arpinfo = core.ArpInfo()
+
+        arpinfo.init_block("triton_mox_pin_quick", block)
+
+        assert arpinfo.fuel_type == "MOX"
+        assert arpinfo.pu_frac_list == [4.0, 10.0]
+        assert arpinfo.pu239_frac_list == [50.0, 60.0, 70.0]
+        assert arpinfo.mod_dens_list == [0.65, 0.75]
+        assert len(arpinfo.lib_list) == 12
+        assert arpinfo.burnup_list == [
+            0.0,
+            500.0,
+            7000.0,
+            19000.0,
+            31250.0,
+            43750.0,
+        ]
+
+
 class TestNuclideInventory:
     """Test the NuclideInventory class using real data structures."""
 
@@ -482,9 +855,24 @@ class TestNuclideInventory:
     def sample_composition_manager(self):
         """Create a real composition manager for testing."""
         data = {
-            "0092235": {"mass": 235.044, "atomicNumber": 92, "element": "U", "massNumber": 235},
-            "0092238": {"mass": 238.051, "atomicNumber": 92, "element": "U", "massNumber": 238},
-            "0094239": {"mass": 239.052, "atomicNumber": 94, "element": "Pu", "massNumber": 239}
+            "0092235": {
+                "mass": 235.044,
+                "atomicNumber": 92,
+                "element": "U",
+                "massNumber": 235,
+            },
+            "0092238": {
+                "mass": 238.051,
+                "atomicNumber": 92,
+                "element": "U",
+                "massNumber": 238,
+            },
+            "0094239": {
+                "mass": 239.052,
+                "atomicNumber": 94,
+                "element": "Pu",
+                "massNumber": 239,
+            },
         }
         return core.CompositionManager(data)
 
@@ -494,8 +882,8 @@ class TestNuclideInventory:
         time = np.array([0, 100, 200, 300])  # days
         nuclide_amount = {
             "0092235": np.array([1000, 950, 900, 850]),  # moles
-            "0092238": np.array([100, 105, 110, 115]),   # moles
-            "0094239": np.array([0, 5, 15, 30])          # moles
+            "0092238": np.array([100, 105, 110, 115]),  # moles
+            "0094239": np.array([0, 5, 15, 30]),  # moles
         }
         return core.NuclideInventory(sample_composition_manager, time, nuclide_amount)
 
@@ -530,8 +918,22 @@ class TestMathematicalAlgorithms:
         """Test mathematical properties of axis duplication algorithm."""
         # Test over wide range of realistic reactor parameters
         test_values = [
-            0.0, 0.1, 0.5, 0.723, 1.0, 2.0, 5.0, 10.0, 50.0, 100.0,
-            -0.1, -1.0, -10.0, 1e-10, 1e-5, 1e5
+            0.0,
+            0.1,
+            0.5,
+            0.723,
+            1.0,
+            2.0,
+            5.0,
+            10.0,
+            50.0,
+            100.0,
+            -0.1,
+            -1.0,
+            -10.0,
+            1e-10,
+            1e-5,
+            1e5,
         ]
 
         for x0 in test_values:
@@ -552,28 +954,34 @@ class TestMathematicalAlgorithms:
         """Test mathematical properties of composition normalization."""
         # Test various composition scenarios
         test_compositions = [
-            {"u235": 25, "u238": 75},                    # Simple uranium
-            {"u235": 20, "u238": 70, "pu239": 10},      # U-Pu mixture
-            {"pu239": 50, "pu241": 30, "am241": 20},    # TRU mixture
-            {"u235": 1, "u238": 1, "pu239": 1},         # Equal parts
+            {"u235": 25, "u238": 75},  # Simple uranium
+            {"u235": 20, "u238": 70, "pu239": 10},  # U-Pu mixture
+            {"pu239": 50, "pu241": 30, "am241": 20},  # TRU mixture
+            {"u235": 1, "u238": 1, "pu239": 1},  # Equal parts
         ]
 
         for comp in test_compositions:
             # Test renormalization to 100%
-            norm_comp, norm_factor = core.CompositionManager.renormalize_wtpt(comp, 100.0)
+            norm_comp, norm_factor = core.CompositionManager.renormalize_wtpt(
+                comp, 100.0
+            )
 
             # Mathematical properties
             total = sum(norm_comp.values())
-            assert total == pytest.approx(100.0, abs=1e-10), f"Failed normalization: {total}"
-            assert norm_factor > 0, f"Normalization factor should be positive: {norm_factor}"
+            assert total == pytest.approx(
+                100.0, abs=1e-10
+            ), f"Failed normalization: {total}"
+            assert (
+                norm_factor > 0
+            ), f"Normalization factor should be positive: {norm_factor}"
 
     def test_molar_mass_calculation_properties(self):
         """Test mathematical properties of molar mass calculations."""
         # Test harmonic mean formula: 1/m = sum(w_i / m_i)
         test_cases = [
-            ({"u235": 50, "u238": 50}, {}),           # Equal mixture
-            ({"pu239": 100}, {}),                     # Pure isotope
-            ({"u235": 25, "u238": 75}, {}),          # Enriched uranium
+            ({"u235": 50, "u238": 50}, {}),  # Equal mixture
+            ({"pu239": 100}, {}),  # Pure isotope
+            ({"u235": 25, "u238": 75}, {}),  # Enriched uranium
         ]
 
         for iso_wts, m_data in test_cases:
@@ -588,7 +996,10 @@ class TestMathematicalAlgorithms:
                 isotope = list(iso_wts.keys())[0]
                 # Extract mass number correctly using regex
                 import re
+
                 mass_str = re.sub("^[a-z]+", "", isotope)  # Remove element letters
-                mass_str = re.sub("m[0-9]*$", "", mass_str)  # Remove metastable indicators
+                mass_str = re.sub(
+                    "m[0-9]*$", "", mass_str
+                )  # Remove metastable indicators
                 mass_number = float(mass_str)
                 assert molar_mass == pytest.approx(mass_number, rel=0.01)

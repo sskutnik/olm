@@ -14,6 +14,11 @@ from typing import Literal
 __all__ = ["arpdata_txt"]
 
 _TYPE_ARPDATA_TXT = "scale.olm.assemble:arpdata_txt"
+_POLARIS_BURNUP_RTOL = 5e-3
+_TRITON_BURNUP_RTOL = 2e-2
+_TRITON_FUEL_CASEID = -2
+_POLARIS_FUEL_MATERIAL = "FUEL"
+_POLARIS_FUEL_LIBRARY_SUFFIX = f".{_POLARIS_FUEL_MATERIAL}.f33"
 
 
 def _schema_arpdata_txt(with_state: bool = False):
@@ -60,7 +65,9 @@ def arpdata_txt(
     work_path = Path(_env["work_dir"])
 
     # Get library info data structure.
-    arpinfo = _get_arpinfo(work_path, _model["name"], fuel_type, dim_map)
+    arpinfo = _get_arpinfo(
+        _env["obiwan"], work_path, _model["name"], fuel_type, dim_map
+    )
 
     # Generate thinned burnup list.
     thinned_burnup_list = _generate_thinned_burnup_list(keep_every, arpinfo.burnup_list)
@@ -175,6 +182,43 @@ def _generate_thinned_burnup_list(keep_every, y_list, always_keep_ends=True):
     return thinned_burnup_list
 
 
+def _get_scale_metadata(work_dir, perm):
+    if "_scale" in perm:
+        return perm["_scale"]
+
+    input_file = work_dir / perm["input_file"]
+    if not input_file.exists():
+        raise ValueError(
+            "permutation is missing _scale input classification and "
+            f"input file={input_file} does not exist"
+        )
+
+    with open(input_file, "r") as f:
+        return core.ScaleInput.classify_text(f.read())
+
+
+def _get_artifact_contract(work_dir, perm):
+    scale_metadata = _get_scale_metadata(work_dir, perm)
+    if "artifact_contract" not in scale_metadata:
+        raise ValueError(
+            "SCALE input classification is missing artifact_contract "
+            f"for input_file={perm['input_file']}"
+        )
+    artifact_contract = scale_metadata["artifact_contract"]
+    if artifact_contract not in ["TRITON", "Polaris"]:
+        raise ValueError(
+            f"Unsupported SCALE artifact contract={artifact_contract} "
+            f"for input_file={perm['input_file']}"
+        )
+    return artifact_contract
+
+
+def _get_library_suffix(default_suffix, artifact_contract):
+    if artifact_contract == "Polaris":
+        return _POLARIS_FUEL_LIBRARY_SUFFIX
+    return default_suffix
+
+
 def _get_files(work_dir, suffix, perms):
     """Get list of files by using the generate.olm.json output and changing the suffix to the
     expected library file. Note this is in permutation order, not state space order."""
@@ -182,10 +226,12 @@ def _get_files(work_dir, suffix, perms):
     file_list = list()
     for perm in perms:
         input = perm["input_file"]
+        artifact_contract = _get_artifact_contract(work_dir, perm)
+        lib_suffix = _get_library_suffix(suffix, artifact_contract)
 
         # Convert from .inp to expected suffix.
         lib = work_dir / Path(input)
-        lib = lib.with_suffix(suffix)
+        lib = lib.with_suffix(lib_suffix)
         if not lib.exists():
             raise ValueError(f"library file={lib} does not exist!")
 
@@ -195,41 +241,157 @@ def _get_files(work_dir, suffix, perms):
                 f"output file={output} does not exist! Maybe run was not complete successfully?"
             )
 
-        file_list.append({"lib": lib, "output": output})
+        file_info = {
+            "lib": lib,
+            "output": output,
+            "artifact_contract": artifact_contract,
+        }
 
-        # Optional: if this was a Polaris run, a t16 file is also generated
-        t16 = output = work_dir / Path(input).with_suffix(".t16")
-        if t16.exists():
-            file_list[-1]["t16"] = t16
+        f71 = work_dir / Path(input).with_suffix(".f71")
+        if not f71.exists():
+            raise ValueError(f"f71 file={f71} does not exist!")
+        file_info["f71"] = f71
+
+        file_list.append(file_info)
 
     return file_list
 
 
-def _get_burnup_list(file_list):
+def _get_burnup_list(obiwan, file_list):
     """Extract a burnup list from the output file and make sure they are all the same."""
     burnup_list = list()
     previous_output_file = ""
     for i in range(len(file_list)):
-
         output_file = file_list[i]["output"]
-        bu = list()
+        artifact_contract = file_list[i]["artifact_contract"]
 
-        if "t16" in file_list[i].keys():
-            # Polaris: grab the burnups from the t16
-            output_file = file_list[i]["t16"]
-            bu = core.ScaleOutfile.parse_burnups_from_polaris_t16(output_file)
-        else:
-            # TRITON: grab the burnups from the burnup table
+        if artifact_contract == "Polaris":
+            if "f71" not in file_list[i]:
+                raise ValueError(
+                    f"Polaris file info is missing f71 for output_file={output_file}"
+                )
+            caseid = _get_polaris_fuel_caseid_from_output(output_file)
+            output_file = file_list[i]["f71"]
+            bu = core.Obiwan.get_burnups_from_f71(obiwan, output_file, caseid)
+        elif artifact_contract == "TRITON":
             bu = core.ScaleOutfile.parse_burnups_from_triton_output(output_file)
+        else:
+            raise ValueError(
+                f"Unsupported SCALE artifact contract={artifact_contract} "
+                f"for output_file={output_file}"
+            )
 
-        if len(burnup_list) > 0 and not np.array_equal(burnup_list, bu):
+        if len(burnup_list) == 0:
+            burnup_list = bu
+        elif not _burnup_lists_match(burnup_list, bu, artifact_contract):
             raise ValueError(
                 f"Output file={output_file} burnups deviated from previous {previous_output_file}!"
             )
-        burnup_list = bu
         previous_output_file = output_file
 
     return burnup_list
+
+
+def _burnup_lists_match(reference, candidate, artifact_contract):
+    reference = np.asarray(reference)
+    candidate = np.asarray(candidate)
+    if reference.shape != candidate.shape:
+        return False
+    if artifact_contract == "Polaris":
+        return np.allclose(
+            reference,
+            candidate,
+            rtol=_POLARIS_BURNUP_RTOL,
+            atol=1e-6,
+        )
+    if artifact_contract == "TRITON":
+        return np.allclose(
+            reference,
+            candidate,
+            rtol=_TRITON_BURNUP_RTOL,
+            atol=1e-6,
+        )
+    return np.array_equal(reference, candidate)
+
+
+def _get_triton_fuel_caseid(work_dir, perm):
+    return _TRITON_FUEL_CASEID, False
+
+
+def _get_polaris_fuel_caseid_from_output(output_file):
+    caseid = core.ScaleOutfile.parse_polaris_state_table(
+        output_file, _POLARIS_FUEL_MATERIAL
+    )
+    if caseid == -2:
+        raise ValueError(
+            f"Cannot identify Polaris {_POLARIS_FUEL_MATERIAL} case "
+            f"from output file={output_file}"
+        )
+    return caseid
+
+
+def _get_polaris_fuel_caseid(work_dir, perm):
+    outfile = (work_dir / perm["input_file"]).with_suffix(".out")
+    return _get_polaris_fuel_caseid_from_output(outfile), True
+
+
+def _get_fuel_caseid(work_dir, perm):
+    artifact_contract = _get_artifact_contract(work_dir, perm)
+
+    if artifact_contract == "TRITON":
+        return _get_triton_fuel_caseid(work_dir, perm)
+
+    return _get_polaris_fuel_caseid(work_dir, perm)
+
+
+def _validate_fuel_caseid(work_dir, perm, ii, caseid, is_polaris):
+    if f"case({caseid})" not in ii["responses"]:
+        if is_polaris:
+            outfile = (work_dir / perm["input_file"]).with_suffix(".out")
+            raise ValueError(
+                f"Polaris {_POLARIS_FUEL_MATERIAL} case {caseid} "
+                f"from output file={outfile} "
+                "not found in F71 table"
+            )
+        raise ValueError(
+            "Cannot identify TRITON fuel case; case -2 not found in F71 table"
+        )
+
+    return caseid, is_polaris
+
+
+def _get_fuel_caseid_from_ii(work_dir, perm, ii):
+    caseid, is_polaris = _get_fuel_caseid(work_dir, perm)
+    return _validate_fuel_caseid(work_dir, perm, ii, caseid, is_polaris)
+
+
+def _get_fuel_ii_json(obiwan, work_dir, perm):
+    caseid, is_polaris = _get_fuel_caseid(work_dir, perm)
+    f71 = (work_dir / perm["input_file"]).with_suffix(".f71")
+    text = internal.run_command(
+        f"{obiwan} view -format=ii.json {f71} -cases='[{caseid}]'",
+        echo=False,
+    )
+    ii = json.loads(text)
+    _validate_fuel_caseid(work_dir, perm, ii, caseid, is_polaris)
+    ii["responses"]["system"] = ii["responses"].pop(f"case({caseid})")
+    return ii, caseid, is_polaris
+
+
+def _get_triton_history_from_output(obiwan, output_file, f71, caseid):
+    rows = core.ScaleOutfile.parse_triton_library_table(output_file)
+    initialhm = core.Obiwan.get_initialhm_from_f71(obiwan, f71, caseid)
+    burndata = [{"power": row["power"], "burn": row["burn"]} for row in rows]
+    return {"burndata": burndata, "initialhm": initialhm}
+
+
+def _get_history(obiwan, work_dir, perm, f71, caseid, is_polaris):
+    artifact_contract = _get_artifact_contract(work_dir, perm)
+    if artifact_contract == "TRITON":
+        output_file = (work_dir / perm["input_file"]).with_suffix(".out")
+        return _get_triton_history_from_output(obiwan, output_file, f71, caseid)
+
+    return core.Obiwan.get_history_from_f71(obiwan, f71, caseid, is_polaris)
 
 
 def _get_arpinfo_uox(name, perms, file_list, dim_map):
@@ -292,7 +454,7 @@ def _get_arpinfo_mox(name, perms, file_list, dim_map):
     return arpinfo
 
 
-def _get_arpinfo(work_dir, name, fuel_type, dim_map):
+def _get_arpinfo(obiwan, work_dir, name, fuel_type, dim_map):
     """Populate the ArpInfo data."""
 
     # Get generate data which has permutations list with file names.
@@ -316,7 +478,7 @@ def _get_arpinfo(work_dir, name, fuel_type, dim_map):
         )
 
     # Get the burnups.
-    arpinfo.burnup_list = _get_burnup_list(file_list)
+    arpinfo.burnup_list = _get_burnup_list(obiwan, file_list)
 
     # Set new canonical file names.
     arpinfo.set_canonical_filenames(".h5")
@@ -442,32 +604,12 @@ def _process_libraries(obiwan, work_dir, arpinfo, thinned_burnup_list):
         k = arpinfo.get_perm_by_index(i)
         perm = perms[k]
         f71 = (work_dir / perm["input_file"]).with_suffix(".f71")
-        text = internal.run_command(
-            f"{obiwan} view -format=ii.json {f71}",
-            echo=False,
-        )
 
         # Load into data structure and rename.
         ii_json = new_lib.with_suffix(".ii.json")
         internal.logger.debug(f"Converting {f71} to {ii_json}")
 
-        # The case for the "system" in the f71.
-        # If the F71 is from TRITON, the "system" caseid is -2; otherwise, for
-        # Polaris, the "system" caseid is the integrated BASIS material
-        caseid = -2
-        is_polaris = False
-
-        ii = json.loads(text)
-        if not f"case({caseid})" in ii["responses"].keys():
-            of = core.ScaleOutfile((work_dir / perm["input_file"]).with_suffix(".out"))
-            prod_name = of.sequence_list[0]["product"]
-            if prod_name != "Polaris":
-                raise ValueError(f"Cannot identify system basis case; case -2 not found in F71 table (for TRITON) and identfied product is {prod_name}")
-            is_polaris = True
-            caseid = of.parse_polaris_state_table(of.outfile) # default to looking for "BASIS"
-
-
-        ii["responses"]["system"] = ii["responses"].pop(f"case({caseid})")
+        ii, caseid, is_polaris = _get_fuel_ii_json(obiwan, work_dir, perm)
         with open(ii_json, "w") as f:
             f.write(json.dumps(ii, indent=4))
 
@@ -488,7 +630,9 @@ def _process_libraries(obiwan, work_dir, arpinfo, thinned_burnup_list):
                 "comp": {
                     "system": comp_system,
                 },
-                "history": core.Obiwan.get_history_from_f71(obiwan, f71, caseid, is_polaris),
+                "history": _get_history(
+                    obiwan, work_dir, perm, f71, caseid, is_polaris
+                ),
                 "_": {"perm": perm},
                 "_arpinfo": {
                     "interpvars": {**arpinfo.interpvars_by_index(i)},

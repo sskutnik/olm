@@ -1,6 +1,6 @@
 {
     "model": {
-        "name": "uox_quick",
+        "name": "triton_uox_pin_quick",
         "description": "A 2D t-depl pin cell of W17x17 type.",
         "sources":
         {
@@ -24,6 +24,7 @@
     "generate": {
         "_type": "scale.olm.generate.root:jt_expander",
         "template": "model.jt.inp",
+        "artifact_contract": "TRITON",
         "comp": {
             "fuel":{
                 "_type": "scale.olm.generate.comp:uo2_nuregcr5625",
@@ -86,18 +87,24 @@
     "check": {
         "_type": "scale.olm.check:sequencer",
         "sequence":
-        [{
+        [
+        {
             "_type": "scale.olm.check:LowOrderConsistency",
             "name": "loc",
             "template": "model/origami/system-uox.jt.inp",
+            "metric": "grams_per_initial_hm",
+            "nlib_start": 1,
+            "nlib_max": 4,
+            "nburn_start": 1,
+            "nburn_max": 4,
+            "q1_stop_criteria": 0.005,
+            "q2_stop_criteria": 0.005,
             "target_q1": 0.70,
             "target_q2": 0.95,
             "eps0": 1e-12,
             "epsa": 1e-6,
             "epsr": 1e-3,
-            "nuclide_compare": ["u235","pu239","pu240","pu241","pu242","am241",
-                "pu239", "u234", "u238", "cs134", "cs137","nd148","eu154",
-                "am242m","am243", "cm242", "cm244"]
+            "nuclide_compare": ["0092235","0094239","0094240","0094241","0094242","0095241","0094238","0092234","0092238","0055134","0055137","0060148","0063154","1095242","0095243","0096242","0096244"]
         }]
     },
     "report": {

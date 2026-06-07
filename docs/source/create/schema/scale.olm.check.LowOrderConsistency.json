@@ -10,6 +10,15 @@
             "title": "Template",
             "type": "string"
         },
+        "metric": {
+            "default": null,
+            "enum": [
+                "grams_per_initial_hm",
+                "atom_fraction"
+            ],
+            "title": "Metric",
+            "type": "string"
+        },
         "eps0": {
             "default": null,
             "title": "Eps0",
@@ -35,6 +44,36 @@
             "title": "Target Q2",
             "type": "number"
         },
+        "nlib_start": {
+            "default": null,
+            "title": "Nlib Start",
+            "type": "integer"
+        },
+        "nlib_max": {
+            "default": null,
+            "title": "Nlib Max",
+            "type": "integer"
+        },
+        "nburn_start": {
+            "default": null,
+            "title": "Nburn Start",
+            "type": "integer"
+        },
+        "nburn_max": {
+            "default": null,
+            "title": "Nburn Max",
+            "type": "integer"
+        },
+        "q1_stop_criteria": {
+            "default": null,
+            "title": "Q1 Stop Criteria",
+            "type": "number"
+        },
+        "q2_stop_criteria": {
+            "default": null,
+            "title": "Q2 Stop Criteria",
+            "type": "number"
+        },
         "nuclide_compare": {
             "default": null,
             "items": {
@@ -43,9 +82,16 @@
             "title": "Nuclide Compare",
             "type": "array"
         },
+        "assembly_average": {
+            "additionalProperties": true,
+            "default": null,
+            "title": "Assembly Average",
+            "type": "object"
+        },
         "_type": {
             "const": "scale.olm.check:LowOrderConsistency",
-            "title": "Olm Redirect Type"
+            "title": "Olm Redirect Type",
+            "type": "string"
         }
     },
     "required": [
@@ -65,15 +111,23 @@
         "            \"_type\": \"scale.olm.check:LowOrderConsistency\",",
         "            \"name\": \"\",",
         "            \"template\": \"\",",
+        "            \"metric\": \"grams_per_initial_hm\",",
         "            \"eps0\": 1e-12,",
         "            \"epsa\": 1e-06,",
         "            \"epsr\": 0.001,",
         "            \"target_q1\": 0.9,",
         "            \"target_q2\": 0.95,",
+        "            \"nlib_start\": 1,",
+        "            \"nlib_max\": 1,",
+        "            \"nburn_start\": 1,",
+        "            \"nburn_max\": 1,",
+        "            \"q1_stop_criteria\": 0.0,",
+        "            \"q2_stop_criteria\": 0.0,",
         "            \"nuclide_compare\": [",
         "                \"u235\",",
         "                \"pu239\"",
-        "            ]",
+        "            ],",
+        "            \"assembly_average\": null",
         "        }",
         "",
         ".. only::latex",

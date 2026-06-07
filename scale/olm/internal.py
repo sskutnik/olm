@@ -199,9 +199,9 @@ def create(
 def _get_init_variants():
     init_path = Path(__file__).parent / "variants"
     logger.debug("Initialization variants located", init_path=init_path)
-    variants = [
+    variants = sorted(
         str(Path(v).relative_to(init_path)) for v in glob.glob(str(init_path / "*"))
-    ]
+    )
     return init_path, variants
 
 

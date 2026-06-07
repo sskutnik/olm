@@ -2,6 +2,10 @@
 pincell model
 {{static.xslib}}
 
+' QUICK VALIDATION SETTINGS:
+' This reflected pin-cell model and addnux={{static.addnux}} are for PR/example
+' validation. Remove or tighten quick transport/runtime settings for production.
+
 read composition
 '
 ' fuel

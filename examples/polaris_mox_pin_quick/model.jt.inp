@@ -1,0 +1,61 @@
+=polaris
+% --------------------------------------------------------------------------------------------
+%  parameters are: {{state.pu_frac}}         - Pu+Am fraction of heavy metal (wt%)
+%                  {{state.pu239_frac}}      - Pu-239 fraction of Pu+Am (wt%)
+%                  {{state.coolant_density}} - coolant density (g/cc)
+%                  {{state.specific_power}}  - average specific power (MW/MTHM)
+% --------------------------------------------------------------------------------------------
+title "{{_.model.description}}"
+lib "{{static.xslib}}"
+sys PWR
+geom FuelNode : ASSM 1 {{static.pitch}}
+
+{%- set target_pu239 = state.pu239_frac -%}
+{%- set pu_vector_scale = (100.0 - target_pu239) / (100.0 - comp.inner.puo2.iso.pu239) -%}
+{%- set pu_component = state.pu_frac / comp.inner.info.puo2_hm_frac -%}
+{%- set am_component = 100.0 * comp.inner.amo2.dens_frac * comp.inner.info.amo2_hm_frac -%}
+{%- set am_oxygen_component = 100.0 * comp.inner.amo2.dens_frac * (1.0 - comp.inner.info.amo2_hm_frac) -%}
+{%- set uo2_component = 100.0 - pu_component - am_component - am_oxygen_component -%}
+
+comp uvec : WT scale=PCT
+U234={{comp.inner.uo2.iso.u234}}
+U235={{comp.inner.uo2.iso.u235}}
+U236={{comp.inner.uo2.iso.u236}}
+U238={{comp.inner.uo2.iso.u238}}
+comp uo2 : FORM uvec=1 O=2
+
+comp puvec : WT scale=PCT
+Pu238={{comp.inner.puo2.iso.pu238 * pu_vector_scale}}
+Pu239={{target_pu239}}
+Pu240={{comp.inner.puo2.iso.pu240 * pu_vector_scale}}
+Pu241={{comp.inner.puo2.iso.pu241 * pu_vector_scale}}
+Pu242={{comp.inner.puo2.iso.pu242 * pu_vector_scale}}
+comp puo2 : FORM puvec=1 O=2
+
+comp am : FORM Am241=1
+comp oxy : FORM O=1
+comp fuel : WT uo2={{uo2_component}} puo2={{pu_component}} am={{am_component}} oxy={{am_oxygen_component}}
+
+mat FUEL.1 : fuel temp=900 dens={{comp.inner.density}}
+mat GAP.1  : FILLGAS temp=600
+mat CLAD.1 : ZIRC4 temp=600
+mat COOL.1 : WATER dens={{state.coolant_density|round(4,"common")}} temp=575 : boron={{state.boron_ppm}}
+
+pin 1 : {{static.fuelr}} {{static.gapr}} {{static.cladr}}
+      : FUEL.1 GAP.1 CLAD.1
+pinmap 1
+basis ALL=no FUEL=YES
+
+power {{state.specific_power}}
+bu {%- for bu_val in time.gwd_burnups %} {{bu_val}}
+{%- endfor %}
+
+% quick-validation simplifications
+% ------------------------------------ %
+% These transport settings are intentionally low-order for PR/example validation.
+% Remove or tighten them for production reactor-library calculations.
+shield ALL=N
+opt DEPL TrackingSet='Complete' ArchiveF33='ALL'
+opt KEFF NumPolar=1 NumAzim=1 UpscatterSuperGroup=56 CyclicRay=no EigSolver='POWER'
+opt ESSM NumPolar=1 NumAzim=1
+end

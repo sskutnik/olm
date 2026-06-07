@@ -30,6 +30,59 @@ import matplotlib.pyplot as plt
 from scale.olm.internal import run_command
 
 
+_SCALE_SEQUENCE_PRODUCT_PREFIXES = [
+    ("t5-depl", "TRITON"),
+    ("t6-depl", "TRITON"),
+    ("t-depl", "TRITON"),
+    ("polaris", "Polaris"),
+]
+
+
+def _scale_product_name(sequence: str) -> str:
+    sequence = sequence.lower()
+    for prefix, product in _SCALE_SEQUENCE_PRODUCT_PREFIXES:
+        if sequence.startswith(prefix):
+            return product
+    return "UNKNOWN"
+
+
+class ScaleInput:
+    """Classify rendered SCALE input text."""
+
+    @staticmethod
+    def parse_sequence_records(text: str):
+        """Return SCALE sequence specification records from rendered input text."""
+        sequence_records = []
+        sequence_re = re.compile(r"^=\s*([A-Za-z0-9_-]+)")
+        for line in text.splitlines():
+            match = sequence_re.match(line.strip())
+            if match:
+                sequence_records.append(match.group(1).lower())
+        return sequence_records
+
+    @staticmethod
+    def classify_text(text: str):
+        """Classify the SCALE artifact contract required by rendered input text."""
+        sequences = ScaleInput.parse_sequence_records(text)
+        contracts = []
+        for sequence in sequences:
+            product = _scale_product_name(sequence)
+            if product != "UNKNOWN" and product not in contracts:
+                contracts.append(product)
+
+        if not contracts:
+            artifact_contract = None
+        elif len(contracts) == 1:
+            artifact_contract = contracts[0]
+        else:
+            raise ValueError(
+                "Ambiguous SCALE depletion artifact contracts in input: "
+                + ", ".join(contracts)
+            )
+
+        return {"sequences": sequences, "artifact_contract": artifact_contract}
+
+
 class TemplateManager:
     """Manage jinja templates.
 
@@ -128,7 +181,9 @@ class TemplateManager:
         Returns:
             str: text from the expanded template and data
         """
-        return TemplateManager.expand_file(self.templates[name], data)
+        return TemplateManager.expand_file(
+            self.templates[name], data, search_paths=self.paths
+        )
 
     @staticmethod
     def _jinja2_render_traceback(src_path):
@@ -173,6 +228,12 @@ class TemplateManager:
         return traceback_print[:-1]
 
     @staticmethod
+    def _format_template_value(value):
+        if isinstance(value, float):
+            return f"{value:.14e}"
+        return value
+
+    @staticmethod
     def _tree_print(data, path=""):
         if isinstance(data, dict):
             new = ""
@@ -189,10 +250,22 @@ class TemplateManager:
                 new += TemplateManager._tree_print(data[i], path=path + f"[{i}]")
             return new
         else:
-            return f"{path}={data}\n"
+            return f"{path}={TemplateManager._format_template_value(data)}\n"
 
     @staticmethod
-    def expand_text(text: str, data: dict, src_path: str = ""):
+    def _template_search_paths(src_path: str = "", search_paths=None):
+        paths = []
+        if src_path:
+            paths.append(Path(src_path).parent.resolve())
+        if search_paths:
+            for path in search_paths:
+                path = Path(path).resolve()
+                if path not in paths:
+                    paths.append(path)
+        return paths
+
+    @staticmethod
+    def expand_text(text: str, data: dict, src_path: str = "", search_paths=None):
         """Returns the expanded text with data.
 
         Use jinja to expand the text with data.
@@ -200,6 +273,8 @@ class TemplateManager:
         Args:
             text: text containing jinja directives
             data: dictionary containing data
+            src_path: path to source template for traceback and relative includes
+            search_paths: directories searched for parent/included templates
 
         Raises:
             ValueError: if jinja raises an undefined variable error
@@ -207,19 +282,16 @@ class TemplateManager:
         Returns:
             str: expanded text
         """
-        from jinja2 import (
-            Template,
-            StrictUndefined,
-            exceptions,
-            TemplateError,
-            Environment,
-            FileSystemLoader,
-        )
+        from jinja2 import StrictUndefined, exceptions, Environment, FileSystemLoader
 
-        j2t = Template(text, undefined=StrictUndefined)
-        j2t = Environment(
-            loader=FileSystemLoader(".."), undefined=StrictUndefined
-        ).from_string(text)
+        paths = TemplateManager._template_search_paths(src_path, search_paths)
+        loader = FileSystemLoader([str(path) for path in paths]) if paths else None
+        env = Environment(
+            loader=loader,
+            undefined=StrictUndefined,
+            finalize=TemplateManager._format_template_value,
+        )
+        j2t = env.from_string(text)
 
         # Catch specific types of error.
         try:
@@ -238,19 +310,22 @@ class TemplateManager:
             )
 
     @staticmethod
-    def expand_file(path: pathlib.Path, data: dict):
+    def expand_file(path: pathlib.Path, data: dict, search_paths=None):
         """Returns expanded text from a file.
 
         Args:
             path: path containing a file to read
             data: dictionary containing data
+            search_paths: directories searched for parent/included templates
 
         Returns:
             str: expanded text
         """
         with open(path, "r") as f:
             text = f.read()
-            return TemplateManager.expand_text(text, data, src_path=str(path))
+            return TemplateManager.expand_text(
+                text, data, src_path=str(path), search_paths=search_paths
+            )
 
 
 class CompositionManager:
@@ -1150,8 +1225,7 @@ class ScaleOutfile:
             'TRITON'
 
         """
-        products = {"t-depl-1d": "TRITON", "t-depl": "TRITON", "polaris": "Polaris"}
-        return products.get(sequence, "UNKNOWN")
+        return _scale_product_name(sequence)
 
     def __init__(self, outfile: str):
         """
@@ -1218,7 +1292,14 @@ class ScaleOutfile:
             ----------------------------------------------------------------------------------------------------
 
         """
-        burnup_list = []
+        return [0.0] + [
+            row["burnup"] for row in ScaleOutfile.parse_triton_library_table(output)
+        ]
+
+    @staticmethod
+    def parse_triton_library_table(output):
+        """Parse TRITON's time-dependent library burnup table."""
+        rows = []
         with open(output, "r") as f:
             n = 0
             found = False
@@ -1242,42 +1323,20 @@ class ScaleOutfile:
                     if n > 4 and line.strip().startswith("-----"):
                         found = False
                     elif n > 4:
-                        bu = float(line.split()[-1])
-                        burnup_list.append(bu)
-        return burnup_list
+                        tokens = line.split()
+                        if len(tokens) >= 7:
+                            rows.append(
+                                {
+                                    "power": float(tokens[3]),
+                                    "burn": float(tokens[4]),
+                                    "burnup": float(tokens[-1]),
+                                }
+                            )
+        return rows
 
     @staticmethod
-    def parse_burnups_from_polaris_t16(t16_file):
-        """Parse the list of burnups from a Polaris t16 file"""
-
-        burnup_list = []
-        with open(t16_file, "r") as f:
-            for i in range(3):
-               f.readline() # skip first three lines
-
-            n_bu = int(f.readline().split()[0])
-
-            # Skip to the burnup record
-            f.readline()
-            f.readline()
-            line = f.readline()
-            if not "Burnups" in line:
-                raise ValueError("Unexpected file structure to t16; expecting to find burnups record")
-
-            while len(burnup_list) < n_bu:
-                tmp_bu = f.readline().split()
-                burnup_list = [*burnup_list, *tmp_bu]
-
-        # Polaris reports burnups in GWd/MTHM; convert to MWd/MTHM
-        burnup_list = [ float(bu)*1000.0 for bu in burnup_list ]
-
-        return burnup_list
-
-    @staticmethod
-    def parse_polaris_state_table(output, material="BASIS") -> int:
-        """Parse the material state information table to determine the
-          case corresponding to the system heavy metal basis material
-          (or other requested depletable mixture)"""
+    def parse_polaris_state_table(output, material="FUEL") -> int:
+        """Parse the Polaris material-class state table for a requested material."""
 
         with open(output, "r") as f:
             found_integral_edit = False
@@ -1293,7 +1352,6 @@ class ScaleOutfile:
                     return int(tokens[1].strip())
 
         return -2
-
 
     @staticmethod
     def get_runtime(output):
@@ -1318,7 +1376,90 @@ class Obiwan:
         self.obiwan = obiwan
 
     @staticmethod
-    def get_history_from_f71(obiwan, f71, caseid0, is_polaris = False):
+    def _get_info_rows_from_f71(obiwan, f71, caseid0):
+        # TODO: REMOVE THIS CALL TO RUN COMMAND IN FAVOR OF Obiwan class.
+        text0 = run_command(f"{obiwan} view -format=info {f71}", echo=False)
+
+        # Start the text with " pos " which should be the first thing on the header column
+        # line always and the last thing the "D - state definition present" label.
+        start = text0.find(" pos ")
+        end = text0.find("D - state definition present")
+        if start < 0:
+            raise ValueError(f"Could not find OBIWAN info table in f71={f71}")
+        if end < 0:
+            end = len(text0)
+        elif end <= start:
+            raise ValueError(f"Could not find OBIWAN info table in f71={f71}")
+
+        text = text0[start:end]
+        lines = text.split("\n")
+        columns = lines[0].split()
+        required_columns = ["time", "power", "energy", "initialhm", "case"]
+        missing_columns = [
+            column for column in required_columns if column not in columns
+        ]
+        if missing_columns:
+            raise ValueError(
+                f"OBIWAN info table in f71={f71} is missing required columns: "
+                + ", ".join(missing_columns)
+            )
+
+        column_index = {column: columns.index(column) for column in required_columns}
+        rows = []
+        for line in lines[2:]:
+            tokens = line.rstrip().split()
+            if len(tokens) <= max(column_index.values()):
+                break
+            try:
+                row = {
+                    "time": float(tokens[column_index["time"]]),
+                    "power": float(tokens[column_index["power"]]),
+                    "energy": float(tokens[column_index["energy"]]),
+                    "initialhm": float(tokens[column_index["initialhm"]]),
+                    "case": tokens[column_index["case"]],
+                }
+            except ValueError:
+                break
+            if str(caseid0) == str(row["case"]):
+                rows.append(row)
+        return rows
+
+    @staticmethod
+    def get_burnups_from_f71(obiwan, f71, caseid0):
+        rows = Obiwan._get_info_rows_from_f71(obiwan, f71, caseid0)
+        if not rows:
+            raise ValueError(
+                f"Could not find case={caseid0} in OBIWAN info table for f71={f71}"
+            )
+
+        burnups = []
+        for row in rows:
+            initialhm = row["initialhm"]
+            if initialhm <= 0.0:
+                raise ValueError(
+                    f"Cannot calculate burnup for f71={f71}; initialhm={initialhm}"
+                )
+            burnups.append(row["energy"] / initialhm)
+        return burnups
+
+    @staticmethod
+    def get_initialhm_from_f71(obiwan, f71, caseid0):
+        rows = Obiwan._get_info_rows_from_f71(obiwan, f71, caseid0)
+        if not rows:
+            raise ValueError(
+                f"Could not find case={caseid0} in OBIWAN info table for f71={f71}"
+            )
+
+        initialhm = rows[0]["initialhm"]
+        if initialhm <= 0.0:
+            raise ValueError(
+                f"Cannot calculate initial heavy metal for f71={f71}; "
+                f"initialhm={initialhm}"
+            )
+        return initialhm
+
+    @staticmethod
+    def get_history_from_f71(obiwan, f71, caseid0, is_polaris=False):
         """
         Parse the history of the form as follows for 6.3 series:
 
@@ -1351,46 +1492,27 @@ class Obiwan:
               8  1.51200e+08  3.99026e+01  4.18116e+14  5.31986e+22  6.98569e+04  1.00000e+00  1.09091e+05      8     10      7 DC----
 
         """
-        # TODO: REMOVE THIS CALL TO RUN COMMAND IN FAVOR OF Obiwan class.
-        text0 = run_command(f"{obiwan} view -format=info {f71}", echo=False)
-
-        # Start the text with " pos " which should be the first thing on the header column
-        # line always and the last thing the "D - state definition present" label.
-        text = text0[text0.find(" pos ") : text0.find("D - state definition present")]
-        header = text.split("\n")[0]
-        columns = header.split()
-        j_caseid = columns.index("case")
-        ncolumns = j_caseid + 3
-
+        rows = Obiwan._get_info_rows_from_f71(obiwan, f71, caseid0)
         burndata = list()
         initialhm0 = None
         last_days = 0.0
         last_power = 0.0
-        i = 0
-        for line in text.split("\n")[2:]:
-            i += 1
-            tokens = line.rstrip().split()
-            if len(tokens) != ncolumns:
-                break
-            caseid = tokens[j_caseid]
-            if str(caseid0) == str(caseid):
-                days = float(tokens[1]) / 86400.0
-                if days == 0.0:
-                    initialhm0 = float(tokens[6])
-                    last_power = float(tokens[2])
+        for row in rows:
+            days = row["time"] / 86400.0
+            if days == 0.0:
+                initialhm0 = row["initialhm"]
+                last_power = row["power"]
+            else:
+                # Because Polaris reports the power at the actual timestep
+                # rather than the average over the interval, use the power
+                # from the prior step as the interval power.
+                if is_polaris:
+                    power = last_power
                 else:
-                    # Because Polaris reports the power at the actual 
-                    # timestep (rather than the average over the interval), 
-                    # use the power from the prior step as the interval power
-                    if is_polaris:
-                        power = last_power
-                    else:
-                        power = float(tokens[2])
-                    burndata.append(
-                        {"power": power, "burn": (days - last_days)}
-                    )
-                last_power = float(tokens[2])
-                last_days = days
+                    power = row["power"]
+                burndata.append({"power": power, "burn": (days - last_days)})
+            last_power = row["power"]
+            last_days = days
 
         return {"burndata": burndata, "initialhm": initialhm0}
 
@@ -1693,7 +1815,15 @@ class ArpInfo:
         self.name = name
         self.block = block
 
-        if self.name.startswith("mox_"):
+        header = next(
+            (line.split() for line in self.block.splitlines() if line.split()),
+            [],
+        )
+        if len(header) == 5:
+            self.fuel_type = "MOX"
+        elif len(header) == 3:
+            self.fuel_type = "UOX"
+        elif self.name.startswith("mox_"):
             self.fuel_type = "MOX"
         elif self.name.startswith("act_"):
             self.fuel_type = "ACT"

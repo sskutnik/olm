@@ -12,14 +12,14 @@ ending with a simple UOX ORIGEN reactor library.
 
 .. code:: console
 
-	# Initialize a configuration file for the uox_quick variant.
-	$ olm init --variant uox_quick
+	# Initialize a configuration file for the triton_uox_pin_quick variant.
+	$ olm init --variant triton_uox_pin_quick
 
-  	# Create an ORIGEN library.
-  	$ olm create -j6 uox_quick/config.olm.json
-  	
-  	# Open the generated report.
-  	$ open uox_quick/_work/uox_quick.pdf
+	# Create an ORIGEN library.
+	$ olm create -j6 triton_uox_pin_quick/config.olm.json
+
+	# Open the generated report.
+	$ open triton_uox_pin_quick/_work/triton_uox_pin_quick.pdf
 
 ------------------------------------------------------------------------------------------
 
@@ -33,7 +33,7 @@ created library as shown below.
 .. code:: console
 
 	# Allow the local library to be found by olm link.
-	$ export SCALE_OLM_PATH=$PWD/uox_quick/_work
+	$ export SCALE_OLM_PATH=$PWD/triton_uox_pin_quick/_work
 	
 	# Run the ORIGAMI calculation.
 	$ $SCALE_DIR/bin/scalerte -m origami.inp

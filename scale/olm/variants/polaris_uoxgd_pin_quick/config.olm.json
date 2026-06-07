@@ -1,0 +1,94 @@
+{
+    "model": {
+        "name": "polaris_uoxgd_pin_quick",
+        "description": "A 2D Polaris BWR UOX+Gd2O3 pin cell.",
+        "sources": {
+            "1": "SCALE Polaris pin-cell and OLM quick validation examples."
+        },
+        "revision": [
+            "2026 - Added as a Polaris BWR UOX+Gd2O3 quick validation case."
+        ],
+        "notes": [
+            "The model is a quick product validation case with one fuel material.",
+            "The single fuel material is intended to isolate high-order to ORIGAMI inventory consistency from assembly homogenization effects."
+        ]
+    },
+    "generate": {
+        "_type": "scale.olm.generate.root:jt_expander",
+        "template": "model.jt.inp",
+        "artifact_contract": "Polaris",
+        "comp": {
+            "fuel": {
+                "_type": "scale.olm.generate.comp:uo2_nuregcr5625",
+                "density": 10.4
+            }
+        },
+        "static": {
+            "_type": "scale.olm.generate.static:pass_through",
+            "system": "BWR",
+            "xslib": "broad_lwr",
+            "pitch": 1.26,
+            "fuelr": 0.4096,
+            "gapr": 0.4180,
+            "cladr": 0.4750,
+            "gd2o3_wtpt": 3.0,
+            "cr2o3_ppm": 0.0
+        },
+        "states": {
+            "_type": "scale.olm.generate.states:full_hypercube",
+            "coolant_density": [0.75],
+            "enrichment": [3.0],
+            "specific_power": [40.0],
+            "boron_ppm": [0.0]
+        },
+        "time": {
+            "_type": "scale.olm.generate.static:pass_through",
+            "gwd_burnups": [0.5, 1.0, 5.0, 10.0, 25.0, 50.0]
+        }
+    },
+    "run": {
+        "_type": "scale.olm.run:makefile",
+        "dry_run": false
+    },
+    "assemble": {
+        "_type": "scale.olm.assemble:arpdata_txt",
+        "fuel_type": "UOX",
+        "dim_map": {
+            "enrichment": "enrichment",
+            "mod_dens": "coolant_density"
+        },
+        "keep_every": 1
+    },
+    "check": {
+        "_type": "scale.olm.check:sequencer",
+        "sequence": [{
+            "_type": "scale.olm.check:LowOrderConsistency",
+            "name": "loc",
+            "template": "model/origami/system-uox-gd2o3.jt.inp",
+            "metric": "grams_per_initial_hm",
+            "nlib_start": 1,
+            "nlib_max": 4,
+            "nburn_start": 1,
+            "nburn_max": 4,
+            "q1_stop_criteria": 0.005,
+            "q2_stop_criteria": 0.005,
+            "assembly_average": {
+                "gd2o3_pin_wtpt": 3.0,
+                "gd2o3_pin_count": 1,
+                "fuel_pin_count": 1,
+                "uox_fuel_density": 10.4,
+                "gd2o3_fuel_density": 10.4
+            },
+            "target_q1": 0.70,
+            "target_q2": 0.95,
+            "eps0": 1e-12,
+            "epsa": 1e-6,
+            "epsr": 1e-3,
+            "nuclide_compare": ["u235", "pu239", "pu240", "pu241", "pu242", "am241"]
+        }]
+    },
+    "report": {
+        "_type": "scale.olm.report:rst2pdf",
+        "template": "report.jt.rst"
+    }
+}

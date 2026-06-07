@@ -13,11 +13,11 @@ Initialize a new reactor library directory as follows.
 
 .. code:: console
 
-    $ olm init --variant=uox_quick
+    $ olm init --variant=triton_uox_pin_quick
     
-    $ tree uox_quick
+    $ tree triton_uox_pin_quick
 
-    uox_quick
+    triton_uox_pin_quick
     ├── config.olm.json
     ├── model.jt.inp
     └── report.jt.rst
@@ -112,11 +112,11 @@ Generating inputs
 
 .. code:: console
 
-    $ olm create --generate uox_quick/config.olm.json
+    $ olm create --generate triton_uox_pin_quick/config.olm.json
     
-    $ tree uox_quick/_work
+    $ tree triton_uox_pin_quick/_work
     
-    uox_quick/_work
+    triton_uox_pin_quick/_work
     ├── env.olm.json
     ├── generate.olm.json
     └── perms
@@ -176,7 +176,7 @@ environment variable :code:`SCALE_DIR` will find them both.
 
     $ export SCALE_DIR=/Applications/SCALE-6.3.2.app/Contents/Resources
 
-    $ olm create -j6 uox_quick/config.olm.json
+    $ olm create -j6 triton_uox_pin_quick/config.olm.json
 
 With that set, you can create an ORIGEN reactor library with :code:`olm create`
 and the path to the configuration file, :code:`config.olm.json`.
@@ -213,9 +213,9 @@ library.
 
 .. code:: console
 
-    $ tree -L 2 uox_quick/_work
+    $ tree -L 2 triton_uox_pin_quick/_work
 
-	uox_quick/_work
+	triton_uox_pin_quick/_work
 	├── arpdata.arc.h5
 	├── arpdata.txt
 	├── arplibs
@@ -265,8 +265,8 @@ library.
 	│   └── a80cf3a2e9535ae102007cb266b84f9a
 	├── report.olm.json
 	├── run.olm.json
-	├── uox_quick.pdf
-	└── uox_quick.rst
+	├── triton_uox_pin_quick.pdf
+	└── triton_uox_pin_quick.rst
 
 	17 directories, 35 files
 
@@ -289,7 +289,7 @@ The recommended way to use this library is to first set the path variable.
 
 .. code:: console
 
-    $ export SCALE_OLM_PATH=$PWD/uox_quick/_work
+    $ export SCALE_OLM_PATH=$PWD/triton_uox_pin_quick/_work
     
 Copy/paste the input below into a file, :code:`origami.inp`.
 
@@ -299,7 +299,7 @@ Run the input with SCALE.
 
 .. code:: console
 
-    $ export SCALE_OLM_PATH=$PWD/uox_quick/_work
+    $ export SCALE_OLM_PATH=$PWD/triton_uox_pin_quick/_work
     
     $ $SCALE_DIR/bin/scalerte -m origami.inp
     

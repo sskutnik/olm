@@ -12,7 +12,7 @@
 %  [Author(s)] M. Jessee, S. Skutnik
 %  [SCALE Version] SCALE 6.3.3
 %  [Reactor Type] Boiling Water Reactor, simple 7x7 lattice
-%  [Model Info] 2D Polaris full assembly model, {{static.xslib}} cross-section library
+%  [Model Info] 2D Polaris full assembly model with Gd2O3-bearing pins, {{static.xslib}} cross-section library
 %  [Sources]
 {% for key, src in _.model.sources.items() -%}
 %    [{{key}}] {{src}}
@@ -38,11 +38,11 @@ box 0.2032 0.9652 6.72224
 {%- for var_fr in static.enr_variants %}
 comp {{"c_enrU{0:d}".format(loop.index)}} : UOX enr={{"{0:.4f}".format(state.enrichment*var_fr)}}
 {%- endfor %}
-comp gad     : WT GD2O3={{state.wtpt_gd}} c_enrU1=-100
+comp gad     : WT GD2O3={{static.gd2o3_pin_wtpt}} c_enrU1=-100
 {%- for var_fr in static.enr_variants %}
 mat {{"FUEL.{0:d}".format(loop.index)}} : {{"c_enrU{0:d}".format(loop.index)}} {{comp.density}}
 {%- endfor %}
-mat FUEL.5 : gad      10.19
+mat FUEL.5 : gad      {{static.gd2o3_fuel_density}}
 % ------------------------------------ %
 % pins
 % ------------------------------------ %
@@ -62,6 +62,7 @@ B A A A
 B A A A G
 B A G A A A
 C B A A A B B
+basis ALL=no FUEL=YES
 % ------------------------------------ %
 % state conditions
 % ------------------------------------ %
@@ -71,10 +72,12 @@ pow {{state.specific_power}}
 bu {%- for bu_val in time.gwd_burnups %} {{bu_val}}
 {%- endfor %}
 % ------------------------------------ %
-% run-time simplifications
+% quick-validation simplifications
 % ------------------------------------ %
+% These transport settings are intentionally low-order for PR/example validation.
+% Remove or tighten them for production reactor-library calculations.
 shield ALL=N
-opt DEPL TrackingSet='none' Method='predictor'
+opt DEPL TrackingSet='none' Method='predictor' ArchiveF33='ALL'
 opt KEFF NumPolar=1 NumAzim=1 UpscatterSuperGroup=56 CyclicRay=no EigSolver='POWER'
 opt ESSM NumPolar=1 NumAzim=1
 end

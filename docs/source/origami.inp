@@ -4,12 +4,12 @@
 '            origami.inp
 '
 =shell
-olm link uox_quick
+olm link triton_uox_pin_quick
 end
 
 =origami
 
-libs=[ uox_quick ]
+libs=[ triton_uox_pin_quick ]
 
 fuelcomp{
 	uox(fuel){ enrich=4.95 }

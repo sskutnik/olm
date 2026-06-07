@@ -32,13 +32,13 @@ def olm():
 
 **Usage**
 
-Create a reactor library locally at :code:`uox_quick/_work/arpdata.txt`.
+Create a reactor library locally at :code:`triton_uox_pin_quick/_work/arpdata.txt`.
 
 .. code:: console
 
   \b
-  $ olm init --variant uox_quick
-  $ olm create -j6 uox_quick/config.olm.json
+  $ olm init --variant triton_uox_pin_quick
+  $ olm create -j6 triton_uox_pin_quick/config.olm.json
 
 """,
 )
@@ -112,12 +112,12 @@ Choose from one of the variants when you pass the --list option.
   \b
   $ olm init --list
 
-By default creates a directory called `mox_quick` with the files.
+By default creates a directory called `triton_mox_pin_quick` with the files.
 
 .. code:: console
 
   \b
-  $ olm init --variant mox_quick
+  $ olm init --variant triton_mox_pin_quick
 
 """,
 )
@@ -161,9 +161,9 @@ First create and install a reactor library to $HOME/.olm
 .. code:: console
 
   \b
-  $ olm init --variant uox_quick
-  $ olm create -j6 uox_quick/config.olm.json
-  $ olm install --overwrite uox_quick/_work
+  $ olm init --variant triton_uox_pin_quick
+  $ olm create -j6 triton_uox_pin_quick/config.olm.json
+  $ olm install --overwrite triton_uox_pin_quick/_work
   $ export SCALE_OLM_PATH=$HOME/.olm
 
 In a SCALE input file, use a shell to link the library before the origami input. 
@@ -173,10 +173,10 @@ This will work with SCALE 6.2 and later:
 
   \b
   =shell
-  olm link uox_quick
+  olm link triton_uox_pin_quick
   end
   =origami
-  lib=[ uox_quick ]
+  lib=[ triton_uox_pin_quick ]
   ...
   end
 
@@ -254,7 +254,7 @@ Install a reactor library to $HOME/.olm after using :code:`olm create`.
 .. code:: console
 
   \b
-  $ olm install --overwrite uox_quick/_work
+  $ olm install --overwrite triton_uox_pin_quick/_work
   $ export SCALE_OLM_PATH=$HOME/.olm
 
 """,
@@ -319,7 +319,7 @@ Check a reactor library for quality.
 .. code:: console
 
   \b
-  $ olm init --variant uox_quick
+  $ olm init --variant triton_uox_pin_quick
   $ olm check -j6 -s '{"_type": "GridGradient", "eps0": 1e-6}' data/w17x17.arc.h5
   $ cat check.json    # Default output file.
 
