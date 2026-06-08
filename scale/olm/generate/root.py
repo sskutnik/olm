@@ -288,13 +288,19 @@ def jt_expander(
         input_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Expand the template and write the input to disk.
+        # Note that we search both the template's current directory
+        # [Path(template_path).parent] as well as its immediate parent
+        # [Path(template_path).parent.parent] to facilitate template inheritence.
         internal.logger.info("Writing permutation", index=i, input_file=input_file)
         if template_text != "":
             filled_text = core.TemplateManager.expand_text(
                 template_text,
                 data,
                 src_path=str(template_path),
-                search_paths=[Path(template_path).parent],
+                search_paths=[
+                    Path(template_path).parent,
+                    Path(template_path).parent.parent,
+                ],
             )
         else:
             internal.logger.warning(
